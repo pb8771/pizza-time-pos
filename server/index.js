@@ -63,6 +63,9 @@ app.patch("/api/settings", async (req, res) => {
       store_tagline: s.store_tagline,
       store_logo: s.store_logo !== undefined ? (s.store_logo || null) : undefined,
       hidden_nav_items: s.hidden_nav_items !== undefined ? s.hidden_nav_items : undefined,
+      pos_enable_dine_in: s.posEnableDineIn !== undefined ? s.posEnableDineIn : undefined,
+      pos_enable_take_out: s.posEnableTakeOut !== undefined ? s.posEnableTakeOut : undefined,
+      pos_enable_delivery: s.posEnableDelivery !== undefined ? s.posEnableDelivery : undefined,
     };
     const updates = [];
     const params = [];

@@ -74,6 +74,9 @@ export async function loadSettings() {
     hiddenNavItems:     data.hidden_nav_items ? JSON.parse(data.hidden_nav_items) : [],
     storeTagline:       data.store_tagline ?? "",
     storeLogo:          data.store_logo || null,
+    posEnableDineIn:    data.pos_enable_dine_in !== false,
+    posEnableTakeOut:   data.pos_enable_take_out !== false,
+    posEnableDelivery:  data.pos_enable_delivery !== false,
   };
 }
 
@@ -96,6 +99,9 @@ export async function saveSettings(s) {
     hidden_nav_items:    JSON.stringify(s.hiddenNavItems || []),
     store_tagline:       s.storeTagline,
     store_logo:          s.storeLogo,
+    posEnableDineIn:     s.posEnableDineIn,
+    posEnableTakeOut:    s.posEnableTakeOut,
+    posEnableDelivery:   s.posEnableDelivery,
   });
 }
 

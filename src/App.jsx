@@ -114,6 +114,9 @@ const DEFAULT_SETTINGS = {
   onlineOrdering: true,
   onlinePickup: true,
   onlineDelivery: true,
+  posEnableDineIn: true,
+  posEnableTakeOut: true,
+  posEnableDelivery: true,
   onlinePrepTime: 30,
   onlineAsap: true,
   onlineMaxPizzasPerSlot: 4,
@@ -3478,8 +3481,28 @@ function SettingsView({ settings, setSettings }) {
                 ["onlineOrdering", "Enable Online Ordering", settings.onlineOrdering],
                 ["onlinePickup",   "Allow Pickup Orders",    settings.onlinePickup],
                 ["onlineDelivery", "Allow Delivery Orders",  settings.onlineDelivery],
-                ["onlineAsap",     "Allow ASAP Orders",      settings.onlineAsap !== false],
               ].map(([key, label, val]) => (
+                <label key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #1a1a1a", cursor: "pointer" }}>
+                  <span style={{ color: "#ccc", fontSize: 14 }}>{label}</span>
+                  <input type="checkbox" checked={!!val} onChange={() => setOnline(key, !val)} style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#e85d04" }} />
+                </label>
+              ))}
+              {/* POS Order Types */}
+              <div style={{ color: "#e85d04", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: "uppercase", margin: "16px 0 8px" }}>POS Order Types</div>
+              {[
+                ["posEnableDineIn",   "Enable Dine In",   settings.posEnableDineIn  !== false],
+                ["posEnableTakeOut",  "Enable Take Out",  settings.posEnableTakeOut !== false],
+                ["posEnableDelivery", "Enable Delivery",  settings.posEnableDelivery !== false],
+              ].map(([key, label, val]) => (
+                <div key={key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 14, marginBottom: 14, borderBottom: "1px solid #1a1a1a" }}>
+                  <span style={{ color: "#ccc", fontSize: 14 }}>{label}</span>
+                  <button onClick={() => setOnline(key, !val)} style={{ width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", background: val ? "#06d6a0" : "#2a2a2a", position: "relative", flexShrink: 0 }}>
+                    <div style={{ position: "absolute", top: 3, left: val ? 23 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
+                  </button>
+                </div>
+              ))}
+              {/* ASAP toggle stays in online section */}
+              {[["onlineAsap", "Allow ASAP Orders", settings.onlineAsap !== false]].map(([key, label, val]) => (
                 <div key={key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 14, marginBottom: 14, borderBottom: "1px solid #1a1a1a" }}>
                   <span style={{ color: "#ccc", fontSize: 14 }}>{label}</span>
                   {toggleSwitch(key, val)}
@@ -3925,6 +3948,8 @@ function KDS({ orders, onBump, onRecall, setView, session, can, onlineOrderBadge
   const todayDateStr = (() => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); })();
   const isFutureOrder = (o) => {
     if (!o.scheduledTime) return false;
+    // If no "T" it's a time-only string (POS orders) — always today
+    if (!o.scheduledTime.includes("T")) return false;
     const orderDate = o.scheduledTime.split("T")[0];
     return orderDate > todayDateStr;
   };
@@ -3989,7 +4014,7 @@ function KDS({ orders, onBump, onRecall, setView, session, can, onlineOrderBadge
 
   // POS state local to this KDS tablet
   const [kdsItems, setKdsItems] = useState([]);
-  const [kdsOrderType, setKdsOrderType] = useState("Dine In");
+  const [kdsOrderType, setKdsOrderType] = useState("Take Out");
   const [kdsCustomer, setKdsCustomer] = useState(null);
   const [kdsOrderNum, setKdsOrderNum] = useState(nextOrderNum ? nextOrderNum() : 200);
   const [kdsCategory, setKdsCategory] = useState(menu ? Object.keys(menu)[0] : "Pizzas");
@@ -4084,7 +4109,7 @@ function KDS({ orders, onBump, onRecall, setView, session, can, onlineOrderBadge
         {/* POS order type — only in POS mode */}
         {kdsMode === "pos" && (
           <div style={{ display: "flex", gap: 4 }}>
-            {["Dine In","Take Out","Delivery"].map(t => (
+            {[settings.posEnableDineIn !== false && "Dine In", settings.posEnableTakeOut !== false && "Take Out", settings.posEnableDelivery !== false && "Delivery"].filter(Boolean).map(t => (
               <button key={t} onClick={() => setKdsOrderType(t)} style={{ padding: "8px 14px", borderRadius: 7, border: "1px solid " + (kdsOrderType === t ? "#e85d04" : "#2a2a2a"), background: kdsOrderType === t ? "#e85d0422" : "none", color: kdsOrderType === t ? "#e85d04" : "#888", fontSize: 13, fontWeight: 700, cursor: "pointer", minHeight: 44, touchAction: "manipulation" }}>
                 {t}
               </button>
@@ -4224,9 +4249,9 @@ function KDS({ orders, onBump, onRecall, setView, session, can, onlineOrderBadge
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
                 {futureOrders.map(o => {
-                  const schedDate = new Date(o.scheduledTime);
-                  const dateLabel = schedDate.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
-                  const timeLabel = schedDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                  const schedDate = new Date(parseScheduled(o.scheduledTime) || o.scheduledTime);
+                  const dateLabel = isNaN(schedDate) ? o.scheduledTime : schedDate.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+                  const timeLabel = isNaN(schedDate) ? "" : schedDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
                   return (
                     <div key={o.num} style={{ background: "#141414", border: "2px solid #f77f0044", borderRadius: 12, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                       <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "1px solid #222" }}>
@@ -4394,7 +4419,7 @@ export default function App() {
   const [menu, setMenu] = useState(INITIAL_MENU);
   const menuLoaded = useRef(false);
   const [category, setCategory] = useState("Pizzas");
-  const [orderType, setOrderType] = useState("Dine In");
+  const [orderType, setOrderType] = useState("Take Out");
   const [items, setItems] = useState([]);
   const [orderNum, setOrderNum] = useState(nextOrderNum());
   const [customers, setCustomers] = useState(SEED_CUSTOMERS);
@@ -4892,7 +4917,7 @@ export default function App() {
           <>
             <div style={s.menuPanel}>
               <div style={{ display: "flex", borderBottom: "1px solid #1a1a1a" }}>
-                {["Dine In","Take Out","Delivery"].map(t => (
+                {[settings.posEnableDineIn !== false && "Dine In", settings.posEnableTakeOut !== false && "Take Out", settings.posEnableDelivery !== false && "Delivery"].filter(Boolean).map(t => (
                   <button key={t} onClick={() => setOrderType(t)} style={{ ...s.typeBtn, ...(orderType === t ? s.typeActive : {}) }}>{t}</button>
                 ))}
               </div>
