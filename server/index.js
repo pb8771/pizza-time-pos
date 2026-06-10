@@ -471,6 +471,9 @@ app.delete('/api/customers/:id', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── ONLINE ORDERING ────────────────────────────────────────────
+app.use("/api/online", require("./routes/online"));
+
 // ── SPA FALLBACK ─────────────────────────────────────────────
 app.get("*", (req, res) => {
   if (!req.path.startsWith("/api") && !req.path.startsWith("/socket.io")) {
@@ -484,5 +487,3 @@ server.listen(PORT, () => {
   console.log(`Database: ${DB.replace(/:\/\/.*@/, "://***@")}`);
 });
 
-// Online ordering auth + payments
-app.use("/api/online", require("./routes/online"));

@@ -76,6 +76,117 @@ router.post("/place-order", async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// Get available slots for a given date
+router.get("/slots", async (req, res) => {
+  try {
+    console.log("SLOTS REQUEST", req.query);
+    const { date, pizzas } = req.query;
+    const pizzaCount = Math.max(parseInt(pizzas) || 1, 1);
+
+    // Get settings
+    const { rows: settingsRows } = await pool.query("SELECT * FROM settings WHERE id=1");
+    const s = settingsRows[0];
+    const settings = {
+      onlineHours: s.online_hours || {},
+      onlineBlackouts: s.online_blackouts || [],
+      onlineClosedDates: s.online_closed_dates || [],
+      onlinePrepTime: s.online_prep_time || 30,
+      onlineCutoffMins: s.online_cutoff_mins || 30,
+      onlineMaxPizzasPerSlot: s.online_max_pizzas || 4,
+      onlineAsap: s.online_asap !== false,
+    };
+
+    const dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    const targetDate = date ? new Date(date + "T00:00:00") : new Date();
+    const todayStr = new Date().toISOString().split("T")[0];
+    const isToday = !date || date === todayStr;
+    const dayName = dayNames[targetDate.getDay()];
+
+    // Check if date is closed
+    const closedDates = settings.onlineClosedDates || [];
+    if (date && closedDates.includes(date)) {
+      return res.json({ closed: true, slots: [], reason: "closed_date" });
+    }
+
+    // Get hours for this day
+    const onlineHours = settings.onlineHours && Object.keys(settings.onlineHours).length > 0
+      ? settings.onlineHours
+      : dayNames.reduce((acc, d) => ({ ...acc, [d]: { open: true, from: "11:00", to: "21:00" } }), {});
+    const hours = onlineHours[dayName];
+    if (!hours || !hours.open) return res.json({ closed: true, slots: [], reason: "closed_day" });
+
+    const [fromH, fromM] = hours.from.split(":").map(Number);
+    const [toH, toM] = hours.to.split(":").map(Number);
+    const cutoff = settings.onlineCutoffMins || 30;
+    const maxPizzas = settings.onlineMaxPizzasPerSlot || 4;
+    const prepMins = settings.onlinePrepTime || 30;
+    const blackouts = settings.onlineBlackouts || [];
+
+    // Get existing orders for this date to check capacity
+    const dateStr = date || todayStr;
+    const { rows: orders } = await pool.query(
+      `SELECT scheduled_time, pizza_count, slot_key FROM orders 
+       WHERE status NOT IN ('Cancelled') 
+       AND scheduled_time::text LIKE $1`,
+      [dateStr + "%"]
+    );
+
+    const now = new Date();
+    const rawSlots = [];
+    const start = new Date(targetDate);
+    start.setHours(fromH, fromM, 0, 0);
+    const close = new Date(targetDate);
+    close.setHours(toH, toM, 0, 0);
+    const cutoffTime = new Date(close.getTime() - cutoff * 60000);
+
+    let cur = new Date(start);
+    while (cur <= cutoffTime) {
+      const h = cur.getHours();
+      const m = String(cur.getMinutes()).padStart(2, "0");
+      const slotKey = h + ":" + m;
+      const slotDatetime = date + "T" + h + ":" + m;
+
+      // Count pizzas in this slot from existing orders
+      const pizzasUsed = orders.reduce((a, o) => {
+        if (o.scheduled_time && o.scheduled_time.startsWith(slotDatetime)) return a + (o.pizza_count || 1);
+        if (o.slot_key === slotKey && !o.scheduled_time) return a + (o.pizza_count || 0);
+        return a;
+      }, 0);
+
+      const isPast = isToday && cur < new Date(now.getTime() + prepMins * 60000 - 2 * 60000);
+      const isBlackedOut = blackouts.includes(slotKey);
+
+      rawSlots.push({
+        key: slotKey,
+        datetime: slotDatetime,
+        label: cur.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+        pizzasUsed,
+        remaining: Math.max(0, maxPizzas - pizzasUsed),
+        isPast,
+        isBlackedOut,
+      });
+      cur = new Date(cur.getTime() + 15 * 60000);
+    }
+
+    // Build available slots with capacity simulation
+    const slots = rawSlots.map((raw, idx) => {
+      if (raw.isPast || raw.isBlackedOut) return { ...raw, isFull: true };
+      let remaining = pizzaCount;
+      for (let i = idx; i < rawSlots.length && remaining > 0; i++) {
+        if (rawSlots[i].isBlackedOut) break;
+        const cap = rawSlots[i].remaining;
+        remaining -= Math.min(cap, remaining);
+      }
+      return { ...raw, isFull: remaining > 0 };
+    }).filter(s => !s.isPast && !s.isBlackedOut);
+
+    res.json({ closed: false, slots });
+  } catch(e) {
+    console.error("Slots error:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Create Stripe payment intent
 router.post("/payment-intent", async (req, res) => {
   const { amount } = req.body;
