@@ -3365,6 +3365,46 @@ function DeliveryRadiusMap({ settings, apiKey }) {
   );
 }
 
+function PrimaryColorPicker({ settings, setSettings }) {
+  const [color, setColor] = useState(settings.primaryColor || "#c8102e");
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <input type="color" value={color}
+        onChange={e => setColor(e.target.value)}
+        onBlur={e => { const v = e.target.value; setSettings(s => { const next = {...s, primaryColor: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
+        style={{ width: 48, height: 40, border: "none", borderRadius: 8, cursor: "pointer", background: "none" }} />
+      <span style={{ color: "#888", fontSize: 13 }}>{color}</span>
+    </div>
+  );
+}
+
+function HeroTextInput({ settingsKey, value, placeholder, setSettings }) {
+  const [val, setVal] = useState(value);
+  useEffect(() => setVal(value), [value]);
+  return (
+    <input value={val} placeholder={placeholder}
+      onChange={e => setVal(e.target.value)}
+      onBlur={e => { const v = e.target.value; setSettings(s => { const next = {...s, [settingsKey]: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
+      style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, color: "#fff", padding: "10px 14px", fontSize: 14, outline: "none", marginBottom: 14 }} />
+  );
+}
+
+function LogoSizeSlider({ settings, setSettings }) {
+  const [size, setSize] = useState(settings.onlineLogoSize || 120);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+      <input type="range" min="40" max="300" step="10"
+        value={size}
+        onChange={e => setSize(parseInt(e.target.value))}
+        onMouseUp={e => { const v = parseInt(e.target.value); setSettings(s => { const next = {...s, onlineLogoSize: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
+        onTouchEnd={e => { const v = parseInt(e.target.value); setSettings(s => { const next = {...s, onlineLogoSize: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
+        style={{ flex: 1, accentColor: "#e85d04" }} />
+      <span style={{ color: "#888", fontSize: 13, minWidth: 40 }}>{size}px</span>
+      {settings.storeLogo && <img src={settings.storeLogo} alt="preview" style={{ height: Math.min(60, size), maxWidth: 120, objectFit: "contain", background: "#000", borderRadius: 4, padding: 4 }} />}
+    </div>
+  );
+}
+
 function SettingsView({ settings, setSettings }) {
   const [form, setForm] = useState({
     taxRate: (settings.taxRate * 100).toFixed(1),
@@ -3439,6 +3479,45 @@ function SettingsView({ settings, setSettings }) {
           <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 24, marginBottom: 16 }}>
             <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 16 }}>Store Branding</div>
             <div style={{ marginBottom: 10 }}>
+              <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 16 }}>Branding</div>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 24, marginBottom: 20, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Primary Color</div>
+                  <PrimaryColorPicker settings={settings} setSettings={setSettings} />
+                </div>
+                <div>
+                  <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Store Logo</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    {settings.storeLogo && (
+                      <img src={settings.storeLogo} alt="logo" style={{ height: 48, borderRadius: 6, background: "#000", padding: 4, objectFit: "contain" }} />
+                    )}
+                    <label style={{ cursor: "pointer", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, padding: "8px 14px", color: "#ccc", fontSize: 13 }}>
+                      {settings.storeLogo ? "Change Logo" : "Upload Logo"}
+                      <input type="file" accept="image/*" style={{ display: "none" }} onChange={e => {
+                        const file = e.target.files[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = ev => {
+                          const logo = ev.target.result;
+                          setSettings(s => { const next = {...s, storeLogo: logo}; DB.saveSettings(next).catch(console.error); return next; });
+                        };
+                        reader.readAsDataURL(file);
+                      }} />
+                    </label>
+                    {settings.storeLogo && (
+                      <button onClick={() => setSettings(s => { const next = {...s, storeLogo: null}; DB.saveSettings(next).catch(console.error); return next; })}
+                        style={{ background: "none", border: "1px solid #c0392b44", borderRadius: 8, color: "#c0392b", padding: "8px 12px", fontSize: 13, cursor: "pointer" }}>Remove</button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Logo Size</div>
+              <LogoSizeSlider settings={settings} setSettings={setSettings} />
+              <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Online Ordering Hero Title</div>
+              <input defaultValue={settings.onlineHeroTitle || "Order Online"} key={settings.onlineHeroTitle}
+                onBlur={e => { const v = e.target.value; setSettings(s => { const next = {...s, onlineHeroTitle: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
+                style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, color: "#fff", padding: "10px 14px", fontSize: 14, outline: "none", marginBottom: 14 }} />
+
               <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Store Name</div>
               <input
                 defaultValue={settings.storeName || ""}
