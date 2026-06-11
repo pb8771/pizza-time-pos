@@ -125,6 +125,7 @@ const DEFAULT_SETTINGS = {
   onlineBlackouts: [],
   onlineClosedDates: [],
   deliveryReimbRate: 0.67,
+  deliveryReimbEnabled: false,
   deliveryMinOrder: 15.00,
 };
 let orderCounter = Math.floor(Date.now() / 1000) % 100000; // unique starting point
@@ -1213,7 +1214,7 @@ function OrdersView({ orders, onUpdateStatus }) {
                 <span style={{ color: "#3a86ff", fontSize: 10, letterSpacing: 1, fontWeight: 700 }}>
                   {o.type === "Delivery" ? "DELIVER BY" : "PICKUP AT"}
                 </span>
-                <span style={{ color: "#fff", fontWeight: 700, fontSize: 13 }}>{o.slotLabel || (o.scheduledTime ? new Date(o.scheduledTime).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "ASAP")}</span>
+                <span style={{ color: "#fff", fontWeight: 700, fontSize: 13 }}>{o.slotLabel || (o.scheduledTime ? (o.scheduledTime.includes("T") ? new Date(o.scheduledTime).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : o.scheduledTime) : "ASAP")}</span>
               </div>
             )}
           {o.items.map((it, i) => (
@@ -3307,6 +3308,63 @@ function OnlineMenuManager({ menu, onlineMenu, setOnlineMenu }) {
 // ---------------------------------------------------------------------------
 // Settings View
 // ---------------------------------------------------------------------------
+function DeliveryRadiusMap({ settings, apiKey }) {
+  const mapRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const circleRef = useRef(null);
+  const markerRef = useRef(null);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const lat = settings.storeLat || 40.2978;
+    const lng = settings.storeLng || -79.5422;
+    const radiusMiles = settings.deliveryRadiusMiles || 2;
+    const radiusMeters = radiusMiles * 1609.34;
+
+    const loadMap = () => {
+      if (!window.google) return;
+      const center = { lat, lng };
+      if (!mapInstanceRef.current) {
+        mapInstanceRef.current = new window.google.maps.Map(mapRef.current, {
+          center, zoom: 12,
+          styles: [{ elementType: "geometry", stylers: [{ color: "#1a1a1a" }] },
+            { elementType: "labels.text.fill", stylers: [{ color: "#888" }] },
+            { featureType: "road", elementType: "geometry", stylers: [{ color: "#2a2a2a" }] },
+            { featureType: "water", elementType: "geometry", stylers: [{ color: "#0d0d0d" }] }],
+          disableDefaultUI: true, zoomControl: true,
+        });
+        markerRef.current = new window.google.maps.Marker({ position: center, map: mapInstanceRef.current, title: "Store Location" });
+        circleRef.current = new window.google.maps.Circle({
+          map: mapInstanceRef.current, center, radius: radiusMeters,
+          fillColor: "#e85d04", fillOpacity: 0.15,
+          strokeColor: "#e85d04", strokeOpacity: 0.8, strokeWeight: 2,
+        });
+      } else {
+        mapInstanceRef.current.setCenter(center);
+        markerRef.current.setPosition(center);
+        circleRef.current.setCenter(center);
+        circleRef.current.setRadius(radiusMeters);
+      }
+    };
+
+    if (window.google) { loadMap(); return; }
+    if (document.getElementById("gmaps-script")) { window.initGMap = loadMap; return; }
+    window.initGMap = loadMap;
+    const script = document.createElement("script");
+    script.id = "gmaps-script";
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initGMap`;
+    script.async = true;
+    document.head.appendChild(script);
+  }, [settings.storeLat, settings.storeLng, settings.deliveryRadiusMiles, settings.storeAddress]);
+
+  return (
+    <div>
+      <div style={{ color: "#777", fontSize: 12, marginBottom: 8 }}>Delivery radius preview</div>
+      <div ref={mapRef} style={{ width: "100%", height: 280, borderRadius: 10, overflow: "hidden", border: "1px solid #2a2a2a" }} />
+    </div>
+  );
+}
+
 function SettingsView({ settings, setSettings }) {
   const [form, setForm] = useState({
     taxRate: (settings.taxRate * 100).toFixed(1),
@@ -3428,6 +3486,33 @@ function SettingsView({ settings, setSettings }) {
             <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 18 }}>Tax & Fees</div>
             {field("Sales Tax Rate", "taxRate", "PA state 6% + Allegheny Co. 1% = 7%")}
             {field("Credit Card Surcharge", "cardSurcharge", "Applied when customer pays by card.")}
+          </div>
+          <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 24, marginBottom: 16 }}>
+            <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 18 }}>Delivery Settings</div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Store Address</div>
+              <input defaultValue={settings.storeAddress || "720 East Pittsburgh St, Greensburg, PA 15601"} key={settings.storeAddress}
+                onBlur={e => { const v = e.target.value; setSettings(s => { const next = {...s, storeAddress: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
+                style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, color: "#fff", padding: "10px 14px", fontSize: 14, outline: "none" }} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Delivery Radius (miles)</div>
+              <input type="number" min="0.5" max="20" step="0.5"
+                defaultValue={settings.deliveryRadiusMiles || 2}
+                key={settings.deliveryRadiusMiles}
+                onBlur={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) setSettings(s => { const next = {...s, deliveryRadiusMiles: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
+                style={{ width: 120, background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, color: "#fff", padding: "10px 14px", fontSize: 18, fontWeight: 700, outline: "none", textAlign: "center" }} />
+            </div>
+            <DeliveryRadiusMap settings={settings} apiKey="AIzaSyBIkUWwXSNTOc22dLXwVqynZa8hWyuJITQ" />
+            <div style={{ marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ color: "#ccc", fontSize: 13 }}>Mileage Reimbursement</div>
+                <div style={{ color: "#666", fontSize: 11, marginTop: 2 }}>Track driver reimbursement at {fmt(settings.deliveryReimbRate || 0.67)}/mi</div>
+              </div>
+              <button onClick={() => setOnline("deliveryReimbEnabled", !(settings.deliveryReimbEnabled))} style={{ width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", background: settings.deliveryReimbEnabled ? "#06d6a0" : "#2a2a2a", position: "relative", flexShrink: 0 }}>
+                <div style={{ position: "absolute", top: 3, left: settings.deliveryReimbEnabled ? 23 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
+              </button>
+            </div>
           </div>
           <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 24, marginBottom: 16 }}>
             <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 18 }}>Navigation Visibility</div>
@@ -3825,10 +3910,12 @@ function DispatchBoard({ orders, employees, shifts, onAssign, onUpdateDeliverySt
               <span style={{ color: "#999", fontSize: 12 }}>Revenue</span>
               <span style={{ color: "#e85d04", fontSize: 12, fontWeight: 700 }}>{fmt(delivered.reduce((a, o) => a + o.total, 0))}</span>
             </div>
+            {settings.deliveryReimbEnabled && (
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span style={{ color: "#999", fontSize: 12 }}>Reimb. ({fmt(reimbRate)}/mi)</span>
               <span style={{ color: "#3a86ff", fontSize: 12, fontWeight: 700 }}>tracked on delivery</span>
             </div>
+            )}
           </div>
         )}
       </div>
@@ -4321,7 +4408,7 @@ function KDS({ orders, onBump, onRecall, setView, session, can, onlineOrderBadge
                           {o.type === "Delivery" ? "DELIVER BY" : "PICKUP AT"}
                         </span>
                         <span style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>
-                          {o.slotLabel || (o.scheduledTime ? new Date(o.scheduledTime).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "ASAP")}
+                          {o.slotLabel || (o.scheduledTime ? (o.scheduledTime.includes("T") ? new Date(o.scheduledTime).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : o.scheduledTime) : "ASAP")}
                         </span>
                       </div>
                     )}

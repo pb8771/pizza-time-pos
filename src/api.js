@@ -77,6 +77,11 @@ export async function loadSettings() {
     posEnableDineIn:    data.pos_enable_dine_in !== false,
     posEnableTakeOut:   data.pos_enable_take_out !== false,
     posEnableDelivery:  data.pos_enable_delivery !== false,
+    deliveryRadiusMiles: Number(data.delivery_radius_miles) || 2.0,
+    deliveryReimbEnabled: data.delivery_reimb_enabled || false,
+    storeLat:           Number(data.store_lat) || 40.2978,
+    storeLng:           Number(data.store_lng) || -79.5422,
+    storeAddress:       data.store_address || "720 East Pittsburgh St, Greensburg, PA 15601",
   };
 }
 
@@ -102,6 +107,11 @@ export async function saveSettings(s) {
     posEnableDineIn:     s.posEnableDineIn,
     posEnableTakeOut:    s.posEnableTakeOut,
     posEnableDelivery:   s.posEnableDelivery,
+    deliveryRadiusMiles: s.deliveryRadiusMiles,
+    deliveryReimbEnabled: s.deliveryReimbEnabled,
+    storeLat:            s.storeLat,
+    storeLng:            s.storeLng,
+    storeAddress:        s.storeAddress,
   });
 }
 

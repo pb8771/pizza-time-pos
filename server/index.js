@@ -66,6 +66,11 @@ app.patch("/api/settings", async (req, res) => {
       pos_enable_dine_in: s.posEnableDineIn !== undefined ? s.posEnableDineIn : undefined,
       pos_enable_take_out: s.posEnableTakeOut !== undefined ? s.posEnableTakeOut : undefined,
       pos_enable_delivery: s.posEnableDelivery !== undefined ? s.posEnableDelivery : undefined,
+      delivery_radius_miles: s.deliveryRadiusMiles !== undefined ? s.deliveryRadiusMiles : undefined,
+      delivery_reimb_enabled: s.deliveryReimbEnabled !== undefined ? s.deliveryReimbEnabled : undefined,
+      store_lat: s.storeLat !== undefined ? s.storeLat : undefined,
+      store_lng: s.storeLng !== undefined ? s.storeLng : undefined,
+      store_address: s.storeAddress !== undefined ? s.storeAddress : undefined,
     };
     const updates = [];
     const params = [];
