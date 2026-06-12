@@ -80,8 +80,10 @@ router.post("/place-order", async (req, res) => {
 router.get("/slots", async (req, res) => {
   try {
     console.log("SLOTS REQUEST", req.query);
-    const { date, pizzas } = req.query;
+    const { date, pizzas, tz } = req.query;
     const pizzaCount = Math.max(parseInt(pizzas) || 1, 1);
+    // tz is browser's UTC offset in minutes (positive = ahead of UTC)
+    const tzOffset = parseInt(tz) || 0;
 
     // Get settings
     const { rows: settingsRows } = await pool.query("SELECT * FROM settings WHERE id=1");
@@ -131,7 +133,7 @@ router.get("/slots", async (req, res) => {
       [dateStr + "%"]
     );
 
-    const now = new Date();
+    const now = new Date(Date.now() + tzOffset * 60000); // adjust to browser local time
     const rawSlots = [];
     const start = new Date(targetDate);
     start.setHours(fromH, fromM, 0, 0);

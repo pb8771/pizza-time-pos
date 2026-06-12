@@ -360,11 +360,13 @@ app.post("/api/orders", async (req, res) => {
 app.patch("/api/orders/:num/status", async (req, res) => {
   try {
     const { status, driver_id } = req.body;
+    console.log("PATCH order status:", req.params.num, req.body);
     const updates = [];
     const params = [];
     // Only update fields that are provided
     if (status !== undefined) { updates.push(`status=$${params.length+1}`); params.push(status); }
     if (driver_id !== undefined) { updates.push(`driver_id=$${params.length+1}`); params.push(driver_id); }
+    if (req.body.clearScheduled) { updates.push("scheduled_time=NULL"); updates.push("slot_label=NULL"); updates.push("slot_key=NULL"); }
     if (updates.length === 0) return res.status(400).json({ error: "Nothing to update" });
     params.push(req.params.num);
     await q(`UPDATE orders SET ${updates.join(",")} WHERE order_num=$${params.length}`, params);

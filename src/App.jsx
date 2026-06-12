@@ -168,15 +168,27 @@ function calcItemTotal(item) {
 
 function selectionSummary(item) {
   const lines = [];
-  (item.modifierGroups || []).forEach(g => {
-    const sel = (item.selections || {})[g.id] || [];
-    sel.forEach(m => {
-      const side = m.side && m.side !== "whole" ? " (" + m.side + ")" : "";
-      const price = m.price > 0 ? " +" + fmt(m.price) : "";
-      const xtra = m.extra ? " [xtra]" : "";
-      lines.push(m.name + side + xtra + price);
+  if (item.modifierGroups && item.modifierGroups.length > 0) {
+    item.modifierGroups.forEach(g => {
+      const sel = (item.selections || {})[g.id] || [];
+      sel.forEach(m => {
+        const side = m.side && m.side !== "whole" ? " (" + m.side + ")" : "";
+        const price = m.price > 0 ? " +" + fmt(m.price) : "";
+        const xtra = m.extra ? " [xtra]" : "";
+        lines.push(m.name + side + xtra + price);
+      });
     });
-  });
+  } else {
+    // Fallback for online orders without modifierGroups attached
+    Object.values(item.selections || {}).forEach(mods => {
+      (mods || []).forEach(m => {
+        const side = m.side && m.side !== "whole" ? " (" + m.side + ")" : "";
+        const price = m.price > 0 ? " +" + fmt(m.price) : "";
+        const xtra = m.extra ? " [xtra]" : "";
+        lines.push(m.name + side + xtra + price);
+      });
+    });
+  }
   return lines;
 }
 
@@ -1046,16 +1058,21 @@ function TimeNumpad({ onSet, onClose }) {
   );
 }
 
-function Ticket({ items, orderType, orderNum, onRemove, onPlace, onClear, settings, payment, setPayment, scheduledTime, setScheduledTime }) {
+function Ticket({ items, orderType, orderNum, onRemove, onPlace, onClear, settings, payment, setPayment, scheduledTime, setScheduledTime, discount, setDiscount }) {
   const taxRate = (settings && settings.taxRate) || 0.06;
   const cardSurcharge = (settings && settings.cardSurcharge) || 0.04;
   const subtotal = items.reduce((a, i) => a + calcItemTotal(i), 0);
-  const tax = subtotal * taxRate;
-  const cashBase = subtotal + tax;
+  const discountAmt = discount ? (discount.type === "%" ? subtotal * discount.value / 100 : Math.min(discount.value, subtotal)) : 0;
+  const discountedSubtotal = subtotal - discountAmt;
+  const tax = discountedSubtotal * taxRate;
+  const cashBase = discountedSubtotal + tax;
   const cardBase = cashBase * (1 + cardSurcharge);
   const tip = payment ? payment.tip : 0;
   const cashTotal = cashBase + tip;
   const cardTotal = cardBase + tip;
+  const [showDiscount, setShowDiscount] = useState(false);
+  const [discountInput, setDiscountInput] = useState("");
+  const [discountType, setDiscountType] = useState("%");
   const [showNumpad, setShowNumpad] = useState(false);
 
   const tendered = payment ? parseFloat(payment.tendered) || 0 : 0;
@@ -1111,6 +1128,7 @@ function Ticket({ items, orderType, orderNum, onRemove, onPlace, onClear, settin
       {hasItems && (
         <div style={s.totals}>
           <div style={s.totalRow}><span>Subtotal</span><span>{fmt(subtotal)}</span></div>
+          {discountAmt > 0 && <div style={{ ...s.totalRow, color: "#06d6a0" }}><span>Discount {discount.type === "%" ? `(${discount.value}%)` : ""}</span><span>-{fmt(discountAmt)}</span></div>}
           <div style={s.totalRow}><span>Tax ({(taxRate*100).toFixed(0)}%)</span><span>{fmt(tax)}</span></div>
           {tip > 0 && <div style={{ ...s.totalRow, color: "#06d6a0" }}><span>Tip</span><span>{fmt(tip)}</span></div>}
           <div style={{ ...s.totalBig, color: "#06d6a0", fontSize: 16, marginTop: 6, paddingTop: 6 }}>
@@ -1122,6 +1140,36 @@ function Ticket({ items, orderType, orderNum, onRemove, onPlace, onClear, settin
         </div>
       )}
 
+      {/* Discount */}
+      {hasItems && (
+        <div style={{ padding: "0 14px 6px", flexShrink: 0 }}>
+          {!showDiscount ? (
+            <button onClick={() => setShowDiscount(true)} style={{ width: "100%", padding: "8px 0", borderRadius: 8, border: "1px solid #2a2a2a", background: discountAmt > 0 ? "#06d6a022" : "#111", color: discountAmt > 0 ? "#06d6a0" : "#666", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+              {discountAmt > 0 ? `Discount Applied: -${fmt(discountAmt)}` : "Add Discount"}
+            </button>
+          ) : (
+            <div style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 10, padding: 12 }}>
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                <button onClick={() => setDiscountType("%")} style={{ flex: 1, padding: "8px 0", borderRadius: 6, border: "2px solid " + (discountType === "%" ? "#e85d04" : "#2a2a2a"), background: discountType === "%" ? "#e85d0422" : "#111", color: discountType === "%" ? "#e85d04" : "#888", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>% Off</button>
+                <button onClick={() => setDiscountType("$")} style={{ flex: 1, padding: "8px 0", borderRadius: 6, border: "2px solid " + (discountType === "$" ? "#e85d04" : "#2a2a2a"), background: discountType === "$" ? "#e85d0422" : "#111", color: discountType === "$" ? "#e85d04" : "#888", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>$ Off</button>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input type="number" min="0" max={discountType === "%" ? 100 : subtotal} step="0.01"
+                  value={discountInput} onChange={e => setDiscountInput(e.target.value)}
+                  placeholder={discountType === "%" ? "e.g. 10" : "e.g. 5.00"}
+                  style={{ flex: 1, background: "#111", border: "1px solid #333", borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 14, outline: "none" }} />
+                <button onClick={() => {
+                  const v = parseFloat(discountInput);
+                  if (!isNaN(v) && v > 0) { setDiscount({ type: discountType, value: v }); }
+                  setShowDiscount(false); setDiscountInput("");
+                }} style={{ padding: "8px 14px", borderRadius: 6, background: "#e85d04", border: "none", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Apply</button>
+                <button onClick={() => { setDiscount(null); setShowDiscount(false); setDiscountInput(""); }}
+                  style={{ padding: "8px 10px", borderRadius: 6, background: "none", border: "1px solid #c0392b44", color: "#c0392b", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Clear</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {/* Payment method selector */}
       {hasItems && (
         <div style={{ padding: "0 14px 8px", flexShrink: 0 }}>
@@ -4102,7 +4150,7 @@ function DriverView({ session, orders, onUpdateDeliveryStatus }) {
 // ---------------------------------------------------------------------------
 // KDS - Kitchen Display System
 // ---------------------------------------------------------------------------
-function KDS({ orders, onBump, onRecall, setView, session, can, onlineOrderBadge, setOnlineOrderBadge, settingsOpen, setSettingsOpen, visibleMain, visibleSettings, inSettingsArea, menu, customers, addCustomer, updateCustomer, settings, nextOrderNum, calcItemTotal, upsertCustomer, addOrder, decrementStock }) {
+function KDS({ orders, onBump, onStartNow, onRecall, setView, session, can, onlineOrderBadge, setOnlineOrderBadge, settingsOpen, setSettingsOpen, visibleMain, visibleSettings, inSettingsArea, menu, customers, addCustomer, updateCustomer, settings, nextOrderNum, calcItemTotal, upsertCustomer, addOrder, decrementStock }) {
   const [now, setNow] = useState(Date.now());
   const [recalled, setRecalled] = useState([]);
 
@@ -4175,7 +4223,10 @@ function KDS({ orders, onBump, onRecall, setView, session, can, onlineOrderBadge
     return "#06d6a0";
   };
 
-  const [kdsMode, setKdsMode] = useState("kds"); // "kds" | "pos"
+  const [kdsMode, setKdsMode] = useState("kds");
+  const [kdsDiscount, setKdsDiscount] = useState(null);
+  const [kdsPayment, setKdsPayment] = useState({ method: null, tip: 0, tipMode: null, tendered: "", change: 0 });
+  const [kdsScheduledTime, setKdsScheduledTime] = useState(""); // "kds" | "pos"
   const [kdsSettingsOpen, setKdsSettingsOpen] = useState(false); // slide-out settings
 
   // POS state local to this KDS tablet
@@ -4210,12 +4261,15 @@ function KDS({ orders, onBump, onRecall, setView, session, can, onlineOrderBadge
     if (kdsCustomer && kdsCustomer.phone && upsertCustomer) {
       savedCustomer = upsertCustomer(kdsCustomer) || kdsCustomer;
     }
-    const order = { num: kdsOrderNum, type: kdsOrderType, customer: savedCustomer, items: [...kdsItems], total, status: "In Kitchen", time, placedAt: Date.now() };
+    const order = { num: kdsOrderNum, type: kdsOrderType, customer: savedCustomer, items: [...kdsItems], total, status: "In Kitchen", time, placedAt: Date.now(), discount: kdsDiscount || null, scheduledTime: kdsScheduledTime || null };
     addOrder(order);
     if (decrementStock) decrementStock(kdsItems);
     setKdsItems([]);
     setKdsCustomer(null);
     setKdsOrderNum(n => n + 1);
+    setKdsDiscount(null);
+    setKdsScheduledTime("");
+    setKdsPayment({ method: null, tip: 0, tipMode: null, tendered: "", change: 0 });
     setKdsMode("kds");
   };
 
@@ -4383,7 +4437,7 @@ function KDS({ orders, onBump, onRecall, setView, session, can, onlineOrderBadge
               })}
             </div>
           </div>
-          <Ticket items={kdsItems} orderType={kdsOrderType} orderNum={kdsOrderNum} onRemove={idx => setKdsItems(prev => prev.filter((_, i) => i !== idx))} onPlace={kdsPlaceOrder} onClear={() => setKdsItems([])} settings={settings} payment={payment} setPayment={setPayment} />
+          <Ticket items={kdsItems} orderType={kdsOrderType} orderNum={kdsOrderNum} onRemove={idx => setKdsItems(prev => prev.filter((_, i) => i !== idx))} onPlace={kdsPlaceOrder} onClear={() => setKdsItems([])} settings={settings} payment={kdsPayment} setPayment={setKdsPayment} discount={kdsDiscount} setDiscount={setKdsDiscount} scheduledTime={kdsScheduledTime} setScheduledTime={setKdsScheduledTime} />
         </div>
       )}
 
@@ -4440,7 +4494,7 @@ function KDS({ orders, onBump, onRecall, setView, session, can, onlineOrderBadge
                         {o.notes && <div style={{ color: "#f77f00", fontSize: 11, fontStyle: "italic", marginTop: 6 }}>* {o.notes}</div>}
                       </div>
                       <div style={{ padding: "8px 14px", borderTop: "1px solid #222", display: "flex", gap: 8 }}>
-                        <button onClick={() => onBump(o.num)} style={{ flex: 1, background: "#f77f0022", border: "1px solid #f77f0066", color: "#f77f00", borderRadius: 8, padding: "8px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Start Now</button>
+                        <button onClick={() => onStartNow(o.num)} style={{ flex: 1, background: "#f77f0022", border: "1px solid #f77f0066", color: "#f77f00", borderRadius: 8, padding: "8px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Start Now</button>
                       </div>
                     </div>
                   );
@@ -4509,14 +4563,23 @@ function KDS({ orders, onBump, onRecall, setView, session, can, onlineOrderBadge
                         <span style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>{item.name}</span>
                       </div>
                       {/* Modifiers */}
-                      {(item.modifierGroups || []).map(g => {
-                        const sel = (item.selections || {})[g.id] || [];
-                        return sel.map((m, j) => (
-                          <div key={j} style={{ paddingLeft: 32, color: "#888", fontSize: 13, lineHeight: 1.6 }}>
-                            + {m.name}{m.side && m.side !== "whole" ? " (" + m.side + ")" : ""}{m.extra ? " [XTRA]" : ""}
-                          </div>
-                        ));
-                      })}
+                      {item.modifierGroups && item.modifierGroups.length > 0
+                        ? item.modifierGroups.map(g => {
+                            const sel = (item.selections || {})[g.id] || [];
+                            return sel.map((m, j) => (
+                              <div key={j} style={{ paddingLeft: 32, color: "#888", fontSize: 13, lineHeight: 1.6 }}>
+                                + {m.name}{m.side && m.side !== "whole" ? " (" + m.side + ")" : ""}{m.extra ? " [XTRA]" : ""}
+                              </div>
+                            ));
+                          })
+                        : Object.values(item.selections || {}).flatMap((mods, gi) =>
+                            (mods || []).map((m, j) => (
+                              <div key={gi+"-"+j} style={{ paddingLeft: 32, color: "#888", fontSize: 13, lineHeight: 1.6 }}>
+                                + {m.name}{m.side && m.side !== "whole" ? " (" + m.side + ")" : ""}{m.extra ? " [XTRA]" : ""}
+                              </div>
+                            ))
+                          )
+                      }
                       {item.notes ? (
                         <div style={{ paddingLeft: 32, color: "#f77f00", fontSize: 12, fontStyle: "italic" }}>
                           * {item.notes}
@@ -4586,6 +4649,7 @@ export default function App() {
   const menuLoaded = useRef(false);
   const [category, setCategory] = useState("Pizzas");
   const [orderType, setOrderType] = useState("Take Out");
+  const [discount, setDiscount] = useState(null);
   const [items, setItems] = useState([]);
   const [orderNum, setOrderNum] = useState(nextOrderNum());
   const [customers, setCustomers] = useState(SEED_CUSTOMERS);
@@ -4844,9 +4908,9 @@ export default function App() {
       // Update order count for existing customer
       updateCustomer({ ...customer, orderCount: (customer.orderCount || 0) + 1 });
     }
-    const order = { num: orderNum, type: orderType, customer: savedCustomer, items: [...items], total, status: "In Kitchen", time, placedAt: Date.now(), paymentMethod: payment && payment.method ? payment.method : null, scheduledTime: scheduledTime || null };
+    const order = { num: orderNum, type: orderType, customer: savedCustomer, items: [...items], total, status: "In Kitchen", time, placedAt: Date.now(), paymentMethod: payment && payment.method ? payment.method : null, scheduledTime: scheduledTime || null, discount: discount || null };
     setOrders(prev => [...prev, order]);
-    setItems([]); setCustomer(null); setOrderNum(nextOrderNum()); setScheduledTime("");
+    setItems([]); setCustomer(null); setOrderNum(nextOrderNum()); setScheduledTime(""); setDiscount(null);
     decrementStock(order.items);
     resetPayment();
     showToast("Order #" + order.num + " sent to kitchen!");
@@ -5185,14 +5249,14 @@ export default function App() {
                 })}
               </div>
             </div>
-            <Ticket items={items} orderType={orderType} orderNum={orderNum} onRemove={removeItem} onPlace={placeOrder} onClear={() => setItems([])} settings={settings} payment={payment} setPayment={setPayment} scheduledTime={scheduledTime} setScheduledTime={setScheduledTime} />
+            <Ticket items={items} orderType={orderType} orderNum={orderNum} onRemove={removeItem} onPlace={placeOrder} onClear={() => setItems([])} settings={settings} payment={payment} setPayment={setPayment} scheduledTime={scheduledTime} setScheduledTime={setScheduledTime} discount={discount} setDiscount={setDiscount} />
           </>
         )}
         {view === "cfd"        && (deviceMode === "cfd" ? <CFDDevice settings={settings} /> : <CFD items={items} orderNum={orderNum} settings={settings} payment={payment} />)}
         {view === "online"     && <OnlineOrderPage menu={menu} settings={settings} orders={orders} customers={customers} onOrderPlaced={handleOnlineOrder} />}
         {view === "delivery" && can("orders") && <DispatchBoard orders={orders} employees={employees} shifts={shifts} onAssign={assignDriver} onUpdateDeliveryStatus={updateDeliveryStatus} settings={settings} />}
         {view === "delivery" && !can("orders") && can("driver") && <DriverView session={session} orders={orders} onUpdateDeliveryStatus={updateDeliveryStatus} />}
-        {view === "kds"        && can("kds") && <KDS orders={orders} onBump={bumpOrder} setView={setView} session={session} can={can} onlineOrderBadge={onlineOrderBadge} setOnlineOrderBadge={setOnlineOrderBadge} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} visibleMain={visibleMain} visibleSettings={visibleSettings} inSettingsArea={inSettingsArea} menu={menu} customers={customers} addCustomer={addCustomer} updateCustomer={updateCustomer} settings={settings} nextOrderNum={nextOrderNum} calcItemTotal={calcItemTotal} upsertCustomer={upsertCustomer} addOrder={o => setOrders(prev => [...prev, o])} decrementStock={decrementStock} />}
+        {view === "kds"        && can("kds") && <KDS orders={orders} onBump={bumpOrder} onStartNow={(num) => { setOrders(prev => prev.map(o => o.num === num ? {...o, scheduledTime: null, slotLabel: null, slotKey: null} : o)); fetch(`/api/orders/${num}/status`, {method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({status:"In Kitchen", clearScheduled: true})}).catch(console.error); }} setView={setView} session={session} can={can} onlineOrderBadge={onlineOrderBadge} setOnlineOrderBadge={setOnlineOrderBadge} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} visibleMain={visibleMain} visibleSettings={visibleSettings} inSettingsArea={inSettingsArea} menu={menu} customers={customers} addCustomer={addCustomer} updateCustomer={updateCustomer} settings={settings} nextOrderNum={nextOrderNum} calcItemTotal={calcItemTotal} upsertCustomer={upsertCustomer} addOrder={o => setOrders(prev => [...prev, o])} decrementStock={decrementStock} />}
         {view === "timeclock"  && <TimeclockView session={session} employees={employees} shifts={shifts} onClockIn={clockIn} onClockOut={clockOut} canManage={can("employees")} />}
         {view === "orders"     && can("orders") && <OrdersView orders={orders} onUpdateStatus={updateDeliveryStatus} />}
         {view === "customers"   && can("orders") && <CustomerDatabase customers={customers} orders={orders} onDelete={custToDelete => { DB.deleteCustomer(custToDelete.id).catch(console.error); setCustomers(prev => prev.filter(x => x.id !== custToDelete.id && x.phone !== custToDelete.phone)); }} />}
