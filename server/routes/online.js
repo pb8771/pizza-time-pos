@@ -79,11 +79,8 @@ router.post("/place-order", async (req, res) => {
 // Get available slots for a given date
 router.get("/slots", async (req, res) => {
   try {
-    console.log("SLOTS REQUEST", req.query);
     const { date, pizzas, tz } = req.query;
     const pizzaCount = Math.max(parseInt(pizzas) || 1, 1);
-    // tz is browser's UTC offset in minutes (positive = ahead of UTC)
-    const tzOffset = parseInt(tz) || 0;
 
     // Get settings
     const { rows: settingsRows } = await pool.query("SELECT * FROM settings WHERE id=1");
@@ -99,8 +96,11 @@ router.get("/slots", async (req, res) => {
     };
 
     const dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-    const targetDate = date ? new Date(date + "T00:00:00") : new Date();
-    const todayStr = new Date().toISOString().split("T")[0];
+    // Use store timezone for all date/time calculations
+    const storeTimezone = settings.timezone || "America/New_York";
+    const nowLocal = new Date(new Date().toLocaleString("en-US", { timeZone: storeTimezone }));
+    const todayStr = nowLocal.getFullYear() + "-" + String(nowLocal.getMonth()+1).padStart(2,"0") + "-" + String(nowLocal.getDate()).padStart(2,"0");
+    const targetDate = date ? new Date(date + "T00:00:00") : nowLocal;
     const isToday = !date || date === todayStr;
     const dayName = dayNames[targetDate.getDay()];
 
@@ -133,14 +133,15 @@ router.get("/slots", async (req, res) => {
       [dateStr + "%"]
     );
 
-    const now = new Date(Date.now() + tzOffset * 60000); // adjust to browser local time
+    // Use store timezone from settings
+    
     const rawSlots = [];
     const start = new Date(targetDate);
     start.setHours(fromH, fromM, 0, 0);
     const close = new Date(targetDate);
     close.setHours(toH, toM, 0, 0);
     const cutoffTime = new Date(close.getTime() - cutoff * 60000);
-
+    
     let cur = new Date(start);
     while (cur <= cutoffTime) {
       const h = cur.getHours();
@@ -155,8 +156,9 @@ router.get("/slots", async (req, res) => {
         return a;
       }, 0);
 
-      const isPast = isToday && cur < new Date(now.getTime() + prepMins * 60000 - 2 * 60000);
-      const isBlackedOut = blackouts.includes(slotKey);
+      const isPast = isToday && cur < new Date(nowLocal.getTime() + prepMins * 60000 - 2 * 60000);
+      // Support both old format "13:15" and new format "2026-06-12T13:15"
+      const isBlackedOut = blackouts.some(b => b === slotKey || b === slotDatetime);
 
       rawSlots.push({
         key: slotKey,
@@ -182,6 +184,7 @@ router.get("/slots", async (req, res) => {
       return { ...raw, isFull: remaining > 0 };
     }).filter(s => !s.isPast && !s.isBlackedOut);
 
+    console.log("SLOTS DEBUG rawSlots:", rawSlots.length, "mapped:", slots.length, "first raw:", rawSlots[0] && rawSlots[0].key, "first slot:", slots[0] && slots[0].key);
     res.json({ closed: false, slots });
   } catch(e) {
     console.error("Slots error:", e);

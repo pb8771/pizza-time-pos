@@ -70,6 +70,7 @@ app.patch("/api/settings", async (req, res) => {
       delivery_reimb_enabled: s.deliveryReimbEnabled !== undefined ? s.deliveryReimbEnabled : undefined,
       primary_color: s.primaryColor !== undefined ? s.primaryColor : undefined,
       online_hero_title: s.onlineHeroTitle !== undefined ? s.onlineHeroTitle : undefined,
+      timezone: s.timezone !== undefined ? s.timezone : undefined,
       online_logo_size: s.onlineLogoSize !== undefined ? s.onlineLogoSize : undefined,
       online_hero_subtitle: s.onlineHeroSubtitle !== undefined ? s.onlineHeroSubtitle : undefined,
       store_lat: s.storeLat !== undefined ? s.storeLat : undefined,

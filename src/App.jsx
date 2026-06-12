@@ -3462,6 +3462,7 @@ function SettingsView({ settings, setSettings }) {
   const [onlineTab, setOnlineTab] = useState("general"); // general | hours | throttle | menu | blackout
   const [newBlackout, setNewBlackout] = useState("");
   const [newBlackoutEnd, setNewBlackoutEnd] = useState("");
+  const [newBlackoutDate, setNewBlackoutDate] = useState("");
 
   const save = () => {
     const taxRate = Math.max(0, Math.min(30, parseFloat(form.taxRate) || 0)) / 100;
@@ -3566,6 +3567,17 @@ function SettingsView({ settings, setSettings }) {
                 onBlur={e => { const v = e.target.value; setSettings(s => { const next = {...s, onlineHeroTitle: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
                 style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, color: "#fff", padding: "10px 14px", fontSize: 14, outline: "none", marginBottom: 14 }} />
 
+              <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Timezone</div>
+              <select defaultValue={settings.timezone || "America/New_York"} key={settings.timezone}
+                onChange={e => { const v = e.target.value; setSettings(s => { const next = {...s, timezone: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
+                style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, color: "#fff", padding: "10px 14px", fontSize: 14, outline: "none", marginBottom: 14 }}>
+                <option value="America/New_York">Eastern (ET)</option>
+                <option value="America/Chicago">Central (CT)</option>
+                <option value="America/Denver">Mountain (MT)</option>
+                <option value="America/Los_Angeles">Pacific (PT)</option>
+                <option value="America/Anchorage">Alaska (AKT)</option>
+                <option value="Pacific/Honolulu">Hawaii (HT)</option>
+              </select>
               <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Store Name</div>
               <input
                 defaultValue={settings.storeName || ""}
@@ -3822,8 +3834,12 @@ function SettingsView({ settings, setSettings }) {
               <div style={{ borderTop: "1px solid #222", paddingTop: 20, marginBottom: 16 }}>
                 <div style={{ color: "#e85d04", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Time Slot Blocks</div>
               </div>
-              <div style={{ color: "#888", fontSize: 12, marginBottom: 16 }}>Block a range of time slots — e.g. 12:00 PM to 1:00 PM will block all slots in that window.</div>
+              <div style={{ color: "#888", fontSize: 12, marginBottom: 16 }}>Block specific time slots on a specific date. Blackouts are date-specific and won't carry over to other days.</div>
               <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ color: "#888", fontSize: 13 }}>Date</span>
+                  <input type="date" min={new Date().toISOString().split("T")[0]} value={newBlackoutDate || ""} onChange={e => setNewBlackoutDate(e.target.value)} style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 6, color: "#fff", padding: "8px 12px", fontSize: 14, outline: "none" }} />
+                </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ color: "#888", fontSize: 13 }}>From</span>
                   <input type="time" value={newBlackout} onChange={e => setNewBlackout(e.target.value)} style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 6, color: "#fff", padding: "8px 12px", fontSize: 14, outline: "none" }} />
@@ -3834,27 +3850,24 @@ function SettingsView({ settings, setSettings }) {
                 </div>
                 <button
                   onClick={() => {
-                    if (!newBlackout) return;
+                    if (!newBlackout || !newBlackoutDate) return;
                     const toMins = t => { const [h,m] = t.split(":").map(Number); return h*60+m; };
-                    const fmtSlot = mins => { const h = Math.floor(mins/60); const m = mins%60; return h + ":" + String(m).padStart(2,"0"); };
+                    const fmtSlot = (date, mins) => { const h = Math.floor(mins/60); const m = mins%60; return date + "T" + h + ":" + String(m).padStart(2,"0"); };
                     const startMins = toMins(newBlackout);
                     const endMins = newBlackoutEnd ? toMins(newBlackoutEnd) : startMins;
                     const slots = [];
-                    for (let t = startMins; t <= endMins; t += 15) slots.push(fmtSlot(t));
+                    for (let t = startMins; t <= endMins; t += 15) slots.push(fmtSlot(newBlackoutDate, t));
                     const existing = settings.onlineBlackouts || [];
                     const merged = [...new Set([...existing, ...slots])];
                     setOnline("onlineBlackouts", merged);
-                    setNewBlackout("");
-                    setNewBlackoutEnd("");
+                    setNewBlackout(""); setNewBlackoutEnd(""); setNewBlackoutDate("");
                   }}
                   style={{ padding: "8px 16px", background: "#e85d04", border: "none", borderRadius: 6, color: "#fff", fontWeight: 700, cursor: "pointer" }}
                 >
                   Block Range
                 </button>
-                <button
-                  onClick={() => setOnline("onlineBlackouts", [])}
-                  style={{ padding: "8px 16px", background: "none", border: "1px solid #c0392b44", borderRadius: 6, color: "#c0392b", fontWeight: 700, cursor: "pointer" }}
-                >
+                <button onClick={() => setOnline("onlineBlackouts", [])}
+                  style={{ padding: "8px 16px", background: "none", border: "1px solid #c0392b44", borderRadius: 6, color: "#c0392b", fontWeight: 700, cursor: "pointer" }}>
                   Clear All
                 </button>
               </div>
@@ -3862,12 +3875,9 @@ function SettingsView({ settings, setSettings }) {
                 <div style={{ color: "#777", fontSize: 13 }}>No slots blocked.</div>
               )}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {(settings.onlineBlackouts || []).sort((a,b) => {
-                  const [ah,am] = a.split(":").map(Number); const [bh,bm] = b.split(":").map(Number);
-                  return (ah*60+am)-(bh*60+bm);
-                }).map(slot => (
+                {(settings.onlineBlackouts || []).sort().map(slot => (
                   <div key={slot} style={{ background: "#c0392b22", border: "1px solid #c0392b44", borderRadius: 6, padding: "6px 12px", display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ color: "#c0392b", fontWeight: 700, fontSize: 13 }}>{slot}</span>
+                    <span style={{ color: "#c0392b", fontWeight: 700, fontSize: 13 }}>{slot.includes("T") ? (() => { const [d,t] = slot.split("T"); const [h,m] = t.split(":").map(Number); return new Date(d).toLocaleDateString([],{month:"short",day:"numeric"}) + " " + new Date(0,0,0,h,m).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}); })() : slot}</span>
                     <button onClick={() => setOnline("onlineBlackouts", (settings.onlineBlackouts || []).filter(s => s !== slot))} style={{ background: "none", border: "none", color: "#c0392b", cursor: "pointer", fontSize: 14, padding: 0 }}>x</button>
                   </div>
                 ))}
