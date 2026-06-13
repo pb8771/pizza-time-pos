@@ -1105,7 +1105,7 @@ function TimeNumpad({ onSet, onClose }) {
   );
 }
 
-function Ticket({ items, orderType, orderNum, onRemove, onPlace, onClear, settings, payment, setPayment, scheduledTime, setScheduledTime, discount, setDiscount }) {
+function Ticket({ items, orderType, orderNum, onRemove, onPlace, onClear, settings, payment, setPayment, scheduledTime, setScheduledTime, discount, setDiscount, requirePermission }) {
   const taxRate = (settings && settings.taxRate) || 0.06;
   const cardSurcharge = (settings && settings.cardSurcharge) || 0.04;
   const subtotal = items.reduce((a, i) => a + calcItemTotal(i), 0);
@@ -1191,7 +1191,7 @@ function Ticket({ items, orderType, orderNum, onRemove, onPlace, onClear, settin
       {hasItems && (
         <div style={{ padding: "0 14px 6px", flexShrink: 0 }}>
           {!showDiscount ? (
-            <button onClick={() => setShowDiscount(true)} style={{ width: "100%", padding: "8px 0", borderRadius: 8, border: "1px solid #2a2a2a", background: discountAmt > 0 ? "#06d6a022" : "#111", color: discountAmt > 0 ? "#06d6a0" : "#666", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+            <button onClick={() => { if (requirePermission) { requirePermission("discounts", "Applying discounts requires manager approval.", () => setShowDiscount(true)); } else { setShowDiscount(true); } }} style={{ width: "100%", padding: "8px 0", borderRadius: 8, border: "1px solid #2a2a2a", background: discountAmt > 0 ? "#06d6a022" : "#111", color: discountAmt > 0 ? "#06d6a0" : "#666", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
               {discountAmt > 0 ? `Discount Applied: -${fmt(discountAmt)}` : "Add Discount"}
             </button>
           ) : (
@@ -2140,8 +2140,12 @@ const ALL_PERMISSIONS = [
 
 const ROLE_DEFAULTS = {
   owner:    Object.fromEntries(ALL_PERMISSIONS.map(p => [p.key, true])),
-  manager:  { pos: true, kds: true, cfd: true, orders: true, reports: true, menu: false, settings: false, employees: false, drawer: true, discounts: true, stock: true, driver: false },
+  manager:  { pos: true, kds: true, cfd: true, orders: true, reports: true, menu: true, settings: false, employees: false, drawer: true, discounts: true, stock: true, driver: true },
   employee: { pos: true, kds: true, cfd: true, orders: false, reports: false, menu: false, settings: false, employees: false, drawer: false, discounts: false, stock: false, driver: false },
+  foh:      { pos: true, kds: false, cfd: true, orders: true, reports: false, menu: false, settings: false, employees: false, drawer: false, discounts: false, stock: false, driver: false },
+  boh:      { pos: false, kds: true, cfd: false, orders: true, reports: false, menu: false, settings: false, employees: false, drawer: false, discounts: false, stock: true, driver: false },
+  driver:   { pos: false, kds: false, cfd: false, orders: false, reports: false, menu: false, settings: false, employees: false, drawer: false, discounts: false, stock: false, driver: true },
+  maker:    { pos: false, kds: true, cfd: false, orders: false, reports: false, menu: false, settings: false, employees: false, drawer: false, discounts: false, stock: true, driver: false },
 };
 
 let empIdGen = 100;
@@ -2384,7 +2388,7 @@ function TimeclockView({ session, employees, shifts, onClockIn, onClockOut, onEd
 // ---------------------------------------------------------------------------
 // EMPLOYEE MANAGER VIEW
 // ---------------------------------------------------------------------------
-function EmployeeManager({ employees, setEmployees, session }) {
+function EmployeeManager({ employees, setEmployees, saveEmployee, deleteEmployee, session }) {
   const [selected, setSelected] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState(null);
@@ -2400,7 +2404,7 @@ function EmployeeManager({ employees, setEmployees, session }) {
   };
 
   const startNew = () => {
-    const blank = { id: newEmpId(), name: "", pin: "", role: "employee", payRate: 0, payRateStr: "0.00", phone: "", email: "", active: true, permissions: { ...ROLE_DEFAULTS.employee } };
+    const blank = { id: "new", name: "", pin: "", role: "employee", payRate: 0, payRateStr: "0.00", phone: "", email: "", active: true, permissions: { ...ROLE_DEFAULTS.employee } };
     setForm(blank);
     setSelected(null);
     setEditMode(true);
@@ -2412,8 +2416,16 @@ function EmployeeManager({ employees, setEmployees, session }) {
     const conflict = employees.find(e => e.pin === form.pin && e.id !== form.id);
     if (conflict) { setPinConflict(true); return; }
     const saved = { ...form, payRate: parseFloat(form.payRateStr) || 0 };
-    setEmployees(prev => prev.find(e => e.id === saved.id) ? prev.map(e => e.id === saved.id ? saved : e) : [...prev, saved]);
-    setSelected(saved.id);
+    if (saveEmployee) {
+      saveEmployee(saved).then(dbEmp => {
+        const final = dbEmp || saved;
+        setEmployees(prev => prev.find(e => e.id === final.id) ? prev.map(e => e.id === final.id ? final : e) : [...prev, final]);
+        setSelected(final.id);
+      }).catch(console.error);
+    } else {
+      setEmployees(prev => prev.find(e => e.id === saved.id) ? prev.map(e => e.id === saved.id ? saved : e) : [...prev, saved]);
+      setSelected(saved.id);
+    }
     setEditMode(false);
   };
 
@@ -2536,7 +2548,7 @@ function EmployeeManager({ employees, setEmployees, session }) {
                 <div>
                   <div style={{ color: "#999", fontSize: 11, marginBottom: 4 }}>Role</div>
                   <div style={{ display: "flex", gap: 6 }}>
-                    {["owner","manager","employee"].map(r => (
+                    {["owner","manager","employee","foh","boh","driver","maker"].map(r => (
                       <button key={r} onClick={() => applyRoleDefaults(r)} style={{ flex: 1, padding: "8px 0", borderRadius: 6, border: "1px solid " + (form.role === r ? roleColor[r] : "#2a2a2a"), background: form.role === r ? roleColor[r] + "22" : "none", color: form.role === r ? roleColor[r] : "#555", fontSize: 11, fontWeight: 700, cursor: "pointer", textTransform: "capitalize" }}>
                         {r}
                       </button>
@@ -2551,7 +2563,7 @@ function EmployeeManager({ employees, setEmployees, session }) {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                 <div style={{ color: "#999", fontSize: 11, letterSpacing: 2 }}>PERMISSIONS</div>
                 <div style={{ display: "flex", gap: 6 }}>
-                  {["owner","manager","employee"].map(r => (
+                  {["owner","manager","employee","foh","boh","driver","maker"].map(r => (
                     <button key={r} onClick={() => applyRoleDefaults(r)} style={{ padding: "4px 8px", borderRadius: 4, border: "1px solid #2a2a2a", background: "none", color: "#999", fontSize: 10, cursor: "pointer" }}>
                       Reset to {r}
                     </button>
@@ -2593,7 +2605,7 @@ function EmployeeManager({ employees, setEmployees, session }) {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <button
-                onClick={() => { setEmployees(prev => prev.filter(e => e.id !== confirmDel.id)); setConfirmDel(null); setSelected(null); }}
+                onClick={() => { if (deleteEmployee) deleteEmployee(confirmDel.id).catch(console.error); setEmployees(prev => prev.filter(e => e.id !== confirmDel.id)); setConfirmDel(null); setSelected(null); }}
                 style={{ padding: "11px 0", background: "#c0392b", border: "none", color: "#fff", borderRadius: 7, cursor: "pointer", fontSize: 14, fontWeight: 700 }}
               >
                 Permanently Delete
@@ -4214,7 +4226,7 @@ function DriverView({ session, orders, onUpdateDeliveryStatus }) {
 // ---------------------------------------------------------------------------
 // KDS - Kitchen Display System
 // ---------------------------------------------------------------------------
-function KDS({ orders, onBump, onStartNow, onRecall, setView, session, can, onlineOrderBadge, setOnlineOrderBadge, settingsOpen, setSettingsOpen, visibleMain, visibleSettings, inSettingsArea, menu, customers, addCustomer, updateCustomer, settings, nextOrderNum, calcItemTotal, upsertCustomer, addOrder, decrementStock }) {
+function KDS({ orders, onBump, onStartNow, onRecall, setView, session, can, onlineOrderBadge, setOnlineOrderBadge, settingsOpen, setSettingsOpen, visibleMain, visibleSettings, inSettingsArea, menu, customers, addCustomer, updateCustomer, settings, nextOrderNum, calcItemTotal, upsertCustomer, addOrder, decrementStock, requirePermission }) {
   const [now, setNow] = useState(Date.now());
   const [recalled, setRecalled] = useState([]);
 
@@ -4501,7 +4513,7 @@ function KDS({ orders, onBump, onStartNow, onRecall, setView, session, can, onli
               })}
             </div>
           </div>
-          <Ticket items={kdsItems} orderType={kdsOrderType} orderNum={kdsOrderNum} onRemove={idx => setKdsItems(prev => prev.filter((_, i) => i !== idx))} onPlace={kdsPlaceOrder} onClear={() => setKdsItems([])} settings={settings} payment={kdsPayment} setPayment={setKdsPayment} discount={kdsDiscount} setDiscount={setKdsDiscount} scheduledTime={kdsScheduledTime} setScheduledTime={setKdsScheduledTime} />
+          <Ticket items={kdsItems} orderType={kdsOrderType} orderNum={kdsOrderNum} onRemove={idx => setKdsItems(prev => prev.filter((_, i) => i !== idx))} onPlace={kdsPlaceOrder} onClear={() => setKdsItems([])} settings={settings} payment={kdsPayment} setPayment={setKdsPayment} discount={kdsDiscount} setDiscount={setKdsDiscount} scheduledTime={kdsScheduledTime} setScheduledTime={setKdsScheduledTime} requirePermission={requirePermission} />
         </div>
       )}
 
@@ -4705,7 +4717,7 @@ export default function App() {
   const deviceMode = new URLSearchParams(window.location.search).get("mode");
 
   const [session, setSession] = useState(null);
-  const [employees, setEmployees] = useState(SEED_EMPLOYEES);
+  const [employees, setEmployees] = useState([]);
   const [shifts, setShifts] = useState([]);
   const [view, setView] = useState(deviceMode || "pos");
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
@@ -4799,6 +4811,12 @@ export default function App() {
 
   // Permission helper
   const can = (key) => session && session.permissions && session.permissions[key];
+  // Manager override
+  const [overrideRequest, setOverrideRequest] = useState(null);
+  const requirePermission = (key, reason, onSuccess) => {
+    if (can(key)) { onSuccess(); return; }
+    setOverrideRequest({ key, reason, onSuccess });
+  };
 
   // Clock in/out — persisted to Supabase
   let shiftIdGen = 9000;
@@ -5051,7 +5069,7 @@ export default function App() {
     ["orders",    "Orders",           "orders"],
     ["customers", "Customers",        "orders"],
     ["online",    "Online Orders",    "orders"],
-    ["delivery",  "Dispatch",         "orders"],
+    ["delivery",  "Dispatch",         "delivery"],
   ];
   // Settings sub-menu items
   const settingsNavItems = [
@@ -5064,7 +5082,10 @@ export default function App() {
   const hiddenNav = settings.hiddenNavItems || [];
   const visibleMain = mainNavItems.filter(([id, label, perm]) => {
     if (hiddenNav.includes(id)) return false;
-    if (id === "delivery") return can("orders") || can("driver");
+    if (id === "delivery") {
+      if (!settings || settings.posEnableDelivery === false || settings.posEnableDelivery === undefined) return false;
+      return can("driver") || (session && (session.role === "owner" || session.role === "manager"));
+    }
     return perm === null || can(perm);
   });
   const visibleSettings = settingsNavItems.filter(([id, label, perm]) => perm === null || can(perm));
@@ -5106,7 +5127,7 @@ export default function App() {
               <>
                 <button onClick={() => setView("pos")} style={{ ...s.navBtn, ...(view === "pos" ? s.navActive : {}), fontSize: 12, padding: "8px 12px", minHeight: 38 }}>POS</button>
                 <button onClick={() => setView("orders")} style={{ ...s.navBtn, ...(view === "orders" ? s.navActive : {}), fontSize: 12, padding: "8px 12px", minHeight: 38 }}>Orders</button>
-                <button onClick={() => setView("delivery")} style={{ ...s.navBtn, ...(view === "delivery" ? s.navActive : {}), fontSize: 12, padding: "8px 12px", minHeight: 38 }}>{can("orders") ? "Dispatch" : "My Deliveries"}</button>
+                {(settings && settings.posEnableDelivery && (can("driver") || session.role === "owner" || session.role === "manager")) && <button onClick={() => setView("delivery")} style={{ ...s.navBtn, ...(view === "delivery" ? s.navActive : {}), fontSize: 12, padding: "8px 12px", minHeight: 38 }}>{can("orders") ? "Dispatch" : "My Deliveries"}</button>}
                 <button onClick={() => setView("timeclock")} style={{ ...s.navBtn, ...(view === "timeclock" ? s.navActive : {}), fontSize: 12, padding: "8px 12px", minHeight: 38 }}>Timeclock</button>
               </>
             )}
@@ -5114,7 +5135,7 @@ export default function App() {
               <>
                 <button onClick={() => setView("kds")} style={{ ...s.navBtn, ...(view === "kds" ? s.navActive : {}), fontSize: 12, padding: "8px 12px", minHeight: 38 }}>KDS</button>
                 <button onClick={() => setView("orders")} style={{ ...s.navBtn, ...(view === "orders" ? s.navActive : {}), fontSize: 12, padding: "8px 12px", minHeight: 38 }}>Orders</button>
-                <button onClick={() => setView("delivery")} style={{ ...s.navBtn, ...(view === "delivery" ? s.navActive : {}), fontSize: 12, padding: "8px 12px", minHeight: 38 }}>{can("orders") ? "Dispatch" : "My Deliveries"}</button>
+                {(settings && settings.posEnableDelivery && (can("driver") || session.role === "owner" || session.role === "manager")) && <button onClick={() => setView("delivery")} style={{ ...s.navBtn, ...(view === "delivery" ? s.navActive : {}), fontSize: 12, padding: "8px 12px", minHeight: 38 }}>{can("orders") ? "Dispatch" : "My Deliveries"}</button>}
                 <button onClick={() => setView("timeclock")} style={{ ...s.navBtn, ...(view === "timeclock" ? s.navActive : {}), fontSize: 12, padding: "8px 12px", minHeight: 38 }}>Timeclock</button>
               </>
             )}
@@ -5313,14 +5334,14 @@ export default function App() {
                 })}
               </div>
             </div>
-            <Ticket items={items} orderType={orderType} orderNum={orderNum} onRemove={removeItem} onPlace={placeOrder} onClear={() => setItems([])} settings={settings} payment={payment} setPayment={setPayment} scheduledTime={scheduledTime} setScheduledTime={setScheduledTime} discount={discount} setDiscount={setDiscount} />
+            <Ticket items={items} orderType={orderType} orderNum={orderNum} onRemove={removeItem} onPlace={placeOrder} onClear={() => setItems([])} settings={settings} payment={payment} setPayment={setPayment} scheduledTime={scheduledTime} setScheduledTime={setScheduledTime} discount={discount} setDiscount={setDiscount} requirePermission={requirePermission} />
           </>
         )}
         {view === "cfd"        && (deviceMode === "cfd" ? <CFDDevice settings={settings} /> : <CFD items={items} orderNum={orderNum} settings={settings} payment={payment} />)}
         {view === "online"     && <OnlineOrderPage menu={menu} settings={settings} orders={orders} customers={customers} onOrderPlaced={handleOnlineOrder} />}
         {view === "delivery" && can("orders") && <DispatchBoard orders={orders} employees={employees} shifts={shifts} onAssign={assignDriver} onUpdateDeliveryStatus={updateDeliveryStatus} settings={settings} />}
         {view === "delivery" && !can("orders") && can("driver") && <DriverView session={session} orders={orders} onUpdateDeliveryStatus={updateDeliveryStatus} />}
-        {view === "kds"        && can("kds") && <KDS orders={orders} onBump={bumpOrder} onStartNow={(num) => { setOrders(prev => prev.map(o => o.num === num ? {...o, scheduledTime: null, slotLabel: null, slotKey: null} : o)); fetch(`/api/orders/${num}/status`, {method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({status:"In Kitchen", clearScheduled: true})}).catch(console.error); }} setView={setView} session={session} can={can} onlineOrderBadge={onlineOrderBadge} setOnlineOrderBadge={setOnlineOrderBadge} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} visibleMain={visibleMain} visibleSettings={visibleSettings} inSettingsArea={inSettingsArea} menu={menu} customers={customers} addCustomer={addCustomer} updateCustomer={updateCustomer} settings={settings} nextOrderNum={nextOrderNum} calcItemTotal={calcItemTotal} upsertCustomer={upsertCustomer} addOrder={o => setOrders(prev => [...prev, o])} decrementStock={decrementStock} />}
+        {view === "kds"        && can("kds") && <KDS requirePermission={requirePermission} orders={orders} onBump={bumpOrder} onStartNow={(num) => { setOrders(prev => prev.map(o => o.num === num ? {...o, scheduledTime: null, slotLabel: null, slotKey: null} : o)); fetch(`/api/orders/${num}/status`, {method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({status:"In Kitchen", clearScheduled: true})}).catch(console.error); }} setView={setView} session={session} can={can} onlineOrderBadge={onlineOrderBadge} setOnlineOrderBadge={setOnlineOrderBadge} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} visibleMain={visibleMain} visibleSettings={visibleSettings} inSettingsArea={inSettingsArea} menu={menu} customers={customers} addCustomer={addCustomer} updateCustomer={updateCustomer} settings={settings} nextOrderNum={nextOrderNum} calcItemTotal={calcItemTotal} upsertCustomer={upsertCustomer} addOrder={o => setOrders(prev => [...prev, o])} decrementStock={decrementStock} />}
         {view === "timeclock"  && <TimeclockView session={session} employees={employees} shifts={shifts} onClockIn={clockIn} onClockOut={clockOut} canManage={can("employees")} />}
         {view === "orders"     && can("orders") && <OrdersView orders={orders} onUpdateStatus={updateDeliveryStatus} />}
         {view === "customers"   && can("orders") && <CustomerDatabase customers={customers} orders={orders} onDelete={custToDelete => { DB.deleteCustomer(custToDelete.id).catch(console.error); setCustomers(prev => prev.filter(x => x.id !== custToDelete.id && x.phone !== custToDelete.phone)); }} />}
