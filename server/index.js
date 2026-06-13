@@ -483,6 +483,48 @@ app.delete('/api/customers/:id', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── DISCOUNTS ────────────────────────────────────────────────────
+app.get("/api/discounts", async (req, res) => {
+  try {
+    const { rows } = await q("SELECT * FROM discounts WHERE active=true ORDER BY name");
+    res.json(rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+app.post("/api/discounts", async (req, res) => {
+  try {
+    const { name, type, value } = req.body;
+    const { rows } = await q("INSERT INTO discounts (name,type,value) VALUES ($1,$2,$3) RETURNING *", [name, type, value]);
+    res.json(rows[0]);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+app.delete("/api/discounts/:id", async (req, res) => {
+  try {
+    await q("UPDATE discounts SET active=false WHERE id=$1", [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── DISCOUNTS ────────────────────────────────────────────────────
+app.get("/api/discounts", async (req, res) => {
+  try {
+    const { rows } = await q("SELECT * FROM discounts WHERE active=true ORDER BY name");
+    res.json(rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+app.post("/api/discounts", async (req, res) => {
+  try {
+    const { name, type, value } = req.body;
+    const { rows } = await q("INSERT INTO discounts (name,type,value) VALUES ($1,$2,$3) RETURNING *", [name, type, value]);
+    res.json(rows[0]);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+app.delete("/api/discounts/:id", async (req, res) => {
+  try {
+    await q("UPDATE discounts SET active=false WHERE id=$1", [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── ONLINE ORDERING ────────────────────────────────────────────
 app.use("/api/online", require("./routes/online"));
 

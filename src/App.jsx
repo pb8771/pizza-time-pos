@@ -1195,25 +1195,7 @@ function Ticket({ items, orderType, orderNum, onRemove, onPlace, onClear, settin
               {discountAmt > 0 ? `Discount Applied: -${fmt(discountAmt)}` : "Add Discount"}
             </button>
           ) : (
-            <div style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 10, padding: 12 }}>
-              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                <button onClick={() => setDiscountType("%")} style={{ flex: 1, padding: "8px 0", borderRadius: 6, border: "2px solid " + (discountType === "%" ? "#e85d04" : "#2a2a2a"), background: discountType === "%" ? "#e85d0422" : "#111", color: discountType === "%" ? "#e85d04" : "#888", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>% Off</button>
-                <button onClick={() => setDiscountType("$")} style={{ flex: 1, padding: "8px 0", borderRadius: 6, border: "2px solid " + (discountType === "$" ? "#e85d04" : "#2a2a2a"), background: discountType === "$" ? "#e85d0422" : "#111", color: discountType === "$" ? "#e85d04" : "#888", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>$ Off</button>
-              </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <input type="number" min="0" max={discountType === "%" ? 100 : subtotal} step="0.01"
-                  value={discountInput} onChange={e => setDiscountInput(e.target.value)}
-                  placeholder={discountType === "%" ? "e.g. 10" : "e.g. 5.00"}
-                  style={{ flex: 1, background: "#111", border: "1px solid #333", borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 14, outline: "none" }} />
-                <button onClick={() => {
-                  const v = parseFloat(discountInput);
-                  if (!isNaN(v) && v > 0) { setDiscount({ type: discountType, value: v }); }
-                  setShowDiscount(false); setDiscountInput("");
-                }} style={{ padding: "8px 14px", borderRadius: 6, background: "#e85d04", border: "none", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Apply</button>
-                <button onClick={() => { setDiscount(null); setShowDiscount(false); setDiscountInput(""); }}
-                  style={{ padding: "8px 10px", borderRadius: 6, background: "none", border: "1px solid #c0392b44", color: "#c0392b", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Clear</button>
-              </div>
-            </div>
+            <DiscountPanel subtotal={subtotal} onApply={d => { setDiscount(d); setShowDiscount(false); }} onClear={() => { setDiscount(null); setShowDiscount(false); }} />
           )}
         </div>
       )}
@@ -3481,6 +3463,47 @@ function HeroTextInput({ settingsKey, value, placeholder, setSettings }) {
       onChange={e => setVal(e.target.value)}
       onBlur={e => { const v = e.target.value; setSettings(s => { const next = {...s, [settingsKey]: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
       style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, color: "#fff", padding: "10px 14px", fontSize: 14, outline: "none", marginBottom: 14 }} />
+  );
+}
+
+function DiscountPanel({ subtotal, onApply, onClear }) {
+  const [presets, setPresets] = useState([]);
+  const [discountType, setDiscountType] = useState("%");
+  const [discountInput, setDiscountInput] = useState("");
+  const [showNumpad, setShowNumpad] = useState(false);
+  useEffect(() => {
+    fetch("/api/discounts").then(r => r.json()).then(d => setPresets(Array.isArray(d) ? d : [])).catch(() => {});
+  }, []);
+  const apply = (type, value) => { const v = parseFloat(value); if (!isNaN(v) && v > 0) onApply({ type, value: v }); };
+  return (
+    <div style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 10, padding: 12 }}>
+      {presets.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ color: "#888", fontSize: 11, letterSpacing: 1, marginBottom: 6 }}>QUICK DISCOUNTS</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {presets.map(p => (
+              <button key={p.id} onClick={() => apply(p.type, p.value)}
+                style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #e85d0444", background: "#e85d0411", color: "#e85d04", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                {p.name} ({p.type === "%" ? p.value + "%" : fmt(p.value)})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div style={{ color: "#888", fontSize: 11, letterSpacing: 1, marginBottom: 6 }}>MANUAL</div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+        <button onClick={() => setDiscountType("%")} style={{ flex: 1, padding: "8px 0", borderRadius: 6, border: "2px solid " + (discountType === "%" ? "#e85d04" : "#2a2a2a"), background: discountType === "%" ? "#e85d0422" : "#111", color: discountType === "%" ? "#e85d04" : "#888", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>% Off</button>
+        <button onClick={() => setDiscountType("$")} style={{ flex: 1, padding: "8px 0", borderRadius: 6, border: "2px solid " + (discountType === "$" ? "#e85d04" : "#2a2a2a"), background: discountType === "$" ? "#e85d0422" : "#111", color: discountType === "$" ? "#e85d04" : "#888", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>$ Off</button>
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <div onClick={() => setShowNumpad(true)} style={{ flex: 1, background: "#111", border: "1px solid #333", borderRadius: 6, color: discountInput ? "#fff" : "#555", padding: "8px 10px", fontSize: 14, cursor: "pointer", fontFamily: "monospace", minHeight: 36, display: "flex", alignItems: "center" }}>
+          {discountInput || (discountType === "%" ? "0%" : "$0.00")}
+        </div>
+        <button onClick={() => apply(discountType, discountInput)} style={{ padding: "8px 14px", borderRadius: 6, background: "#e85d04", border: "none", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Apply</button>
+        <button onClick={onClear} style={{ padding: "8px 10px", borderRadius: 6, background: "none", border: "1px solid #c0392b44", color: "#c0392b", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Clear</button>
+      </div>
+      {showNumpad && <Numpad value={discountInput} label={discountType === "%" ? "DISCOUNT %" : "DISCOUNT $"} onChange={setDiscountInput} onClose={() => setShowNumpad(false)} />}
+    </div>
   );
 }
 
