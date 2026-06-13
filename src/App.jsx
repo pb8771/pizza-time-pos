@@ -3466,6 +3466,66 @@ function HeroTextInput({ settingsKey, value, placeholder, setSettings }) {
   );
 }
 
+function DiscountsManager() {
+  const [discounts, setDiscounts] = useState([]);
+  const [name, setName] = useState("");
+  const [type, setType] = useState("%");
+  const [value, setValue] = useState("");
+  const [showNumpad, setShowNumpad] = useState(false);
+
+  const load = () => fetch("/api/discounts").then(r => r.json()).then(d => setDiscounts(Array.isArray(d) ? d : [])).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const add = () => {
+    const v = parseFloat(value);
+    if (!name || isNaN(v) || v <= 0) return;
+    fetch("/api/discounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, type, value: v }) })
+      .then(() => { setName(""); setValue(""); load(); }).catch(() => {});
+  };
+
+  const remove = (id) => {
+    fetch(`/api/discounts/${id}`, { method: "DELETE" }).then(load).catch(() => {});
+  };
+
+  return (
+    <div>
+      <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 24, marginBottom: 16 }}>
+        <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 16 }}>Preset Discounts</div>
+        {discounts.length === 0 && <div style={{ color: "#777", fontSize: 13, marginBottom: 16 }}>No preset discounts yet.</div>}
+        {discounts.map(d => (
+          <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, background: "#1a1a1a", borderRadius: 8, padding: "10px 14px" }}>
+            <div>
+              <span style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>{d.name}</span>
+              <span style={{ color: "#e85d04", fontSize: 13, marginLeft: 10 }}>{d.type === "%" ? d.value + "% off" : fmt(d.value) + " off"}</span>
+            </div>
+            <button onClick={() => remove(d.id)} style={{ background: "none", border: "1px solid #c0392b44", borderRadius: 6, color: "#c0392b", padding: "6px 12px", fontSize: 13, cursor: "pointer" }}>Remove</button>
+          </div>
+        ))}
+      </div>
+      <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 24, marginBottom: 16 }}>
+        <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 16 }}>Add Discount</div>
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Name</div>
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Employee Discount"
+            style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, color: "#fff", padding: "10px 14px", fontSize: 14, outline: "none" }} />
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <button onClick={() => setType("%")} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "2px solid " + (type === "%" ? "#e85d04" : "#2a2a2a"), background: type === "%" ? "#e85d0422" : "#111", color: type === "%" ? "#e85d04" : "#888", fontWeight: 700, cursor: "pointer" }}>% Off</button>
+          <button onClick={() => setType("$")} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "2px solid " + (type === "$" ? "#e85d04" : "#2a2a2a"), background: type === "$" ? "#e85d0422" : "#111", color: type === "$" ? "#e85d04" : "#888", fontWeight: 700, cursor: "pointer" }}>$ Off</button>
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Value</div>
+          <div onClick={() => setShowNumpad(true)} style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, color: value ? "#fff" : "#555", padding: "10px 14px", fontSize: 18, fontWeight: 700, fontFamily: "monospace", cursor: "pointer" }}>
+            {value || (type === "%" ? "0%" : "$0.00")}
+          </div>
+        </div>
+        <button onClick={add} style={{ width: "100%", padding: "12px 0", background: "#e85d04", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer" }}>Add Discount</button>
+        {showNumpad && <Numpad value={value} label={type === "%" ? "DISCOUNT %" : "DISCOUNT $"} onChange={setValue} onClose={() => setShowNumpad(false)} />}
+      </div>
+    </div>
+  );
+}
+
 function DiscountPanel({ subtotal, onApply, onClear }) {
   const [presets, setPresets] = useState([]);
   const [discountType, setDiscountType] = useState("%");
@@ -3529,6 +3589,7 @@ function SettingsView({ settings, setSettings }) {
     cardSurcharge: (settings.cardSurcharge * 100).toFixed(1),
   });
   const [saved, setSaved] = useState(false);
+  const [settingsSection, setSettingsSection] = useState("store");
   const [onlineTab, setOnlineTab] = useState("general"); // general | hours | throttle | menu | blackout
   const [newBlackout, setNewBlackout] = useState("");
   const [newBlackoutEnd, setNewBlackoutEnd] = useState("");
@@ -3588,109 +3649,71 @@ function SettingsView({ settings, setSettings }) {
   ];
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px", minHeight: 0, WebkitOverflowScrolling: "touch" }}>
-      <div style={{ display: "flex", gap: 24, maxWidth: 860 }}>
+    <div style={{ flex: 1, overflowY: "auto", minHeight: 0, display: "flex", flexDirection: "column" }}>
+      {/* Settings Nav */}
+      <div style={{ display: "flex", gap: 4, padding: "12px 16px", borderBottom: "1px solid #1a1a1a", flexShrink: 0, overflowX: "auto" }}>
+        {[["store","Store"],["online","Online"],["menu","Menu"],["delivery","Delivery"],["discounts","Discounts"],["employees","Employees"]].map(([id,label]) => (
+          <button key={id} onClick={() => setSettingsSection(id)}
+            style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: settingsSection === id ? "#e85d04" : "#1a1a1a", color: settingsSection === id ? "#fff" : "#888", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ maxWidth: 520 }}>
 
-        {/* Left: Tax & Fees */}
-        <div style={{ width: 320, flexShrink: 0 }}>
-          <div style={{ color: "#e85d04", fontSize: 11, letterSpacing: 3, textTransform: "uppercase", marginBottom: 16 }}>Store Settings</div>
-
+        {/* ── STORE ── */}
+        {settingsSection === "store" && (<>
           <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 24, marginBottom: 16 }}>
-            <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 16 }}>Store Branding</div>
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 16 }}>Branding</div>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 24, marginBottom: 20, flexWrap: "wrap" }}>
-                <div>
-                  <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Primary Color</div>
-                  <PrimaryColorPicker settings={settings} setSettings={setSettings} />
-                </div>
-                <div>
-                  <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Store Logo</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    {settings.storeLogo && (
-                      <img src={settings.storeLogo} alt="logo" style={{ height: 48, borderRadius: 6, background: "#000", padding: 4, objectFit: "contain" }} />
-                    )}
-                    <label style={{ cursor: "pointer", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, padding: "8px 14px", color: "#ccc", fontSize: 13 }}>
-                      {settings.storeLogo ? "Change Logo" : "Upload Logo"}
-                      <input type="file" accept="image/*" style={{ display: "none" }} onChange={e => {
-                        const file = e.target.files[0];
-                        if (!file) return;
-                        const reader = new FileReader();
-                        reader.onload = ev => {
-                          const logo = ev.target.result;
-                          setSettings(s => { const next = {...s, storeLogo: logo}; DB.saveSettings(next).catch(console.error); return next; });
-                        };
-                        reader.readAsDataURL(file);
-                      }} />
-                    </label>
-                    {settings.storeLogo && (
-                      <button onClick={() => setSettings(s => { const next = {...s, storeLogo: null}; DB.saveSettings(next).catch(console.error); return next; })}
-                        style={{ background: "none", border: "1px solid #c0392b44", borderRadius: 8, color: "#c0392b", padding: "8px 12px", fontSize: 13, cursor: "pointer" }}>Remove</button>
-                    )}
-                  </div>
-                </div>
+            <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 16 }}>Branding</div>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 24, marginBottom: 20, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Primary Color</div>
+                <PrimaryColorPicker settings={settings} setSettings={setSettings} />
               </div>
-              <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Logo Size</div>
-              <LogoSizeSlider settings={settings} setSettings={setSettings} />
-              <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Online Ordering Hero Title</div>
-              <input defaultValue={settings.onlineHeroTitle || "Order Online"} key={settings.onlineHeroTitle}
-                onBlur={e => { const v = e.target.value; setSettings(s => { const next = {...s, onlineHeroTitle: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
-                style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, color: "#fff", padding: "10px 14px", fontSize: 14, outline: "none", marginBottom: 14 }} />
-
-              <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Timezone</div>
-              <select defaultValue={settings.timezone || "America/New_York"} key={settings.timezone}
-                onChange={e => { const v = e.target.value; setSettings(s => { const next = {...s, timezone: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
-                style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, color: "#fff", padding: "10px 14px", fontSize: 14, outline: "none", marginBottom: 14 }}>
-                <option value="America/New_York">Eastern (ET)</option>
-                <option value="America/Chicago">Central (CT)</option>
-                <option value="America/Denver">Mountain (MT)</option>
-                <option value="America/Los_Angeles">Pacific (PT)</option>
-                <option value="America/Anchorage">Alaska (AKT)</option>
-                <option value="Pacific/Honolulu">Hawaii (HT)</option>
-              </select>
-              <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Store Name</div>
-              <input
-                defaultValue={settings.storeName || ""}
-                key={settings.storeName}
-                onBlur={e => { const v = e.target.value; setSettings(s => { const next = {...s, storeName: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
-                placeholder="Pizza Time"
-                style={{ ...s.editInput, width: "100%", fontSize: 16 }}
-              />
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Tagline</div>
-              <input
-                defaultValue={settings.storeTagline || ""}
-                key={settings.storeTagline}
-                onBlur={e => { const v = e.target.value; setSettings(s => { const next = {...s, storeTagline: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
-                placeholder="Point of Sale"
-                style={{ ...s.editInput, width: "100%", fontSize: 16 }}
-              />
-            </div>
-            <div>
-              <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Logo</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 56, height: 56, borderRadius: 10, overflow: "hidden", background: "#1a1a1a", border: "1px solid #2a2a2a", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  {settings.storeLogo
-                    ? <img src={settings.storeLogo} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    : <div style={{ color: "#444", fontSize: 11 }}>No logo</div>}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <input type="file" accept="image/*" id="logo-upload" style={{ display: "none" }} onChange={e => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = ev => { const logo = ev.target.result; setSettings(s => { const next = {...s, storeLogo: logo}; DB.saveSettings(next).catch(console.error); return next; }); }; reader.readAsDataURL(file); }} />
-                  <label htmlFor="logo-upload" style={{ display: "block", padding: "10px 14px", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, color: "#aaa", fontSize: 13, cursor: "pointer", textAlign: "center" }}>
-                    Upload Logo
+              <div>
+                <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Store Logo</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {settings.storeLogo && <img src={settings.storeLogo} alt="logo" style={{ height: 48, borderRadius: 6, background: "#000", padding: 4, objectFit: "contain" }} />}
+                  <label style={{ cursor: "pointer", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, padding: "8px 14px", color: "#ccc", fontSize: 13 }}>
+                    {settings.storeLogo ? "Change Logo" : "Upload Logo"}
+                    <input type="file" accept="image/*" style={{ display: "none" }} onChange={e => {
+                      const file = e.target.files[0]; if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = ev => { const logo = ev.target.result; setSettings(s => { const next = {...s, storeLogo: logo}; DB.saveSettings(next).catch(console.error); return next; }); };
+                      reader.readAsDataURL(file);
+                    }} />
                   </label>
-                  {settings.storeLogo && (
-                    <button onClick={() => { setSettings(s => { const next = {...s, storeLogo: null}; DB.saveSettings(next).catch(console.error); return next; }); }}
-                      style={{ display: "block", width: "100%", marginTop: 6, padding: "6px 0", background: "none", border: "1px solid #c0392b44", borderRadius: 6, color: "#c0392b", fontSize: 12, cursor: "pointer" }}>
-                      Remove Logo
-                    </button>
-                  )}
+                  {settings.storeLogo && <button onClick={() => setSettings(s => { const next = {...s, storeLogo: null}; DB.saveSettings(next).catch(console.error); return next; })} style={{ background: "none", border: "1px solid #c0392b44", borderRadius: 8, color: "#c0392b", padding: "8px 12px", fontSize: 13, cursor: "pointer" }}>Remove</button>}
                 </div>
               </div>
             </div>
+            <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Logo Size</div>
+            <LogoSizeSlider settings={settings} setSettings={setSettings} />
+            <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Online Ordering Hero Title</div>
+            <HeroTextInput settingsKey="onlineHeroTitle" value={settings.onlineHeroTitle || ""} placeholder="Order Online" setSettings={setSettings} />
+            <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Online Ordering Subtitle</div>
+            <HeroTextInput settingsKey="onlineHeroSubtitle" value={settings.onlineHeroSubtitle || ""} placeholder="Fresh, made to order — pick up or delivery" setSettings={setSettings} />
+            <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Timezone</div>
+            <select defaultValue={settings.timezone || "America/New_York"} key={settings.timezone}
+              onChange={e => { const v = e.target.value; setSettings(s => { const next = {...s, timezone: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
+              style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, color: "#fff", padding: "10px 14px", fontSize: 14, outline: "none", marginBottom: 14 }}>
+              <option value="America/New_York">Eastern (ET)</option>
+              <option value="America/Chicago">Central (CT)</option>
+              <option value="America/Denver">Mountain (MT)</option>
+              <option value="America/Los_Angeles">Pacific (PT)</option>
+              <option value="America/Anchorage">Alaska (AKT)</option>
+              <option value="Pacific/Honolulu">Hawaii (HT)</option>
+            </select>
+            <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Store Name</div>
+            <input defaultValue={settings.storeName || ""} key={settings.storeName}
+              onBlur={e => { const v = e.target.value; setSettings(s => { const next = {...s, storeName: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
+              style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, color: "#fff", padding: "10px 14px", fontSize: 14, outline: "none", marginBottom: 14 }} />
+            <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Store Tagline</div>
+            <input defaultValue={settings.storeTagline || ""} key={settings.storeTagline}
+              onBlur={e => { const v = e.target.value; setSettings(s => { const next = {...s, storeTagline: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
+              style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, color: "#fff", padding: "10px 14px", fontSize: 14, outline: "none", marginBottom: 14 }} />
           </div>
-
           <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 24, marginBottom: 16 }}>
             <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 18 }}>Tax & Fees</div>
             <div style={{ marginBottom: 16 }}>
@@ -3703,7 +3726,188 @@ function SettingsView({ settings, setSettings }) {
               <NumpadInput value={(settings.cardSurcharge||0.04)*100} label="CARD SURCHARGE (%)" suffix="%" decimals={true}
                 onChange={v => { const next = {...settings, cardSurcharge: v/100}; setSettings(next); DB.saveSettings(next).catch(console.error); setForm(f=>({...f,cardSurcharge:v})); }} />
             </div>
+            <div style={{ background: "#1a1a1a", borderRadius: 10, padding: 16 }}>
+              <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, marginBottom: 10 }}>PREVIEW ($25 ORDER)</div>
+              <div style={{ display: "flex", justifyContent: "space-between", color: "#999", fontSize: 13, marginBottom: 4 }}><span>Tax ({form.taxRate}%)</span><span>{fmt(25*(parseFloat(form.taxRate)||0)/100)}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", color: "#06d6a0", fontSize: 14, marginBottom: 4, paddingTop: 6, borderTop: "1px solid #2a2a2a" }}><span>Cash total</span><span style={{ fontWeight: 700 }}>{fmt(25*(1+(parseFloat(form.taxRate)||0)/100))}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", color: "#3a86ff", fontSize: 13 }}><span>Card total (+{form.cardSurcharge}%)</span><span style={{ fontWeight: 700 }}>{fmt(25*(1+(parseFloat(form.taxRate)||0)/100)*(1+(parseFloat(form.cardSurcharge)||0)/100))}</span></div>
+            </div>
           </div>
+          <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 24, marginBottom: 16 }}>
+            <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 18 }}>Navigation Visibility</div>
+            <div style={{ color: "#777", fontSize: 12, marginBottom: 14 }}>Hide buttons from the top nav bar.</div>
+            {[["cfd","Customer Display"],["kds","KDS"],["online","Online Orders"],["delivery","Dispatch"],["timeclock","Timeclock"],["customers","Customers"],["orders","Orders"]].map(([id, label]) => {
+              const hidden = (settings.hiddenNavItems || []).includes(id);
+              return (
+                <div key={id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <span style={{ color: hidden ? "#555" : "#ccc", fontSize: 13 }}>{label}</span>
+                  <div onClick={() => {
+                    const current = settings.hiddenNavItems || [];
+                    const next = hidden ? current.filter(x => x !== id) : [...current, id];
+                    setSettings(s => { const updated = {...s, hiddenNavItems: next}; DB.saveSettings(updated).catch(console.error); return updated; });
+                  }} style={{ width: 44, height: 24, borderRadius: 12, background: hidden ? "#2a2a2a" : "#e85d04", cursor: "pointer", position: "relative" }}>
+                    <div style={{ position: "absolute", top: 3, left: hidden ? 3 : 23, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 24, marginBottom: 16 }}>
+            <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 18 }}>Order Types</div>
+            {[["posEnableDineIn","Dine In"],["posEnableTakeOut","Take Out"],["posEnableDelivery","Delivery"]].map(([key,label]) => (
+              <div key={key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <span style={{ color: "#ccc", fontSize: 13 }}>{label}</span>
+                <div onClick={() => setOnline(key, !settings[key])} style={{ width: 44, height: 24, borderRadius: 12, background: settings[key] ? "#e85d04" : "#2a2a2a", cursor: "pointer", position: "relative" }}>
+                  <div style={{ position: "absolute", top: 3, left: settings[key] ? 23 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </>)}
+
+        {/* ── ONLINE ── */}
+        {settingsSection === "online" && (<>
+          <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 24, marginBottom: 16 }}>
+            <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 16 }}>Online Ordering</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <span style={{ color: "#ccc", fontSize: 13 }}>Enable Online Ordering</span>
+              {toggleSwitch("onlineOrdering", settings.onlineOrdering)}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <span style={{ color: "#ccc", fontSize: 13 }}>Enable Pickup</span>
+              {toggleSwitch("onlinePickup", settings.onlinePickup)}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <span style={{ color: "#ccc", fontSize: 13 }}>Enable Delivery</span>
+              {toggleSwitch("onlineDelivery", settings.onlineDelivery)}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <span style={{ color: "#ccc", fontSize: 13 }}>Allow ASAP Orders</span>
+              {toggleSwitch("onlineAsap", settings.onlineAsap)}
+            </div>
+          </div>
+          <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 24, marginBottom: 16 }}>
+            <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 16 }}>Store Hours</div>
+            {["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map(day => {
+              const onlineHours = settings.onlineHours || {};
+              const h = onlineHours[day] || { open: false, from: "11:00", to: "21:00" };
+              return (
+                <div key={day} style={{ marginBottom: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: h.open ? 8 : 0 }}>
+                    <span style={{ color: h.open ? "#ccc" : "#555", fontSize: 13, width: 90 }}>{day}</span>
+                    <div onClick={() => { const next = {...(settings.onlineHours||{}), [day]: {...h, open: !h.open}}; setOnline("onlineHours", next); }}
+                      style={{ width: 44, height: 24, borderRadius: 12, background: h.open ? "#e85d04" : "#2a2a2a", cursor: "pointer", position: "relative" }}>
+                      <div style={{ position: "absolute", top: 3, left: h.open ? 23 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
+                    </div>
+                  </div>
+                  {h.open && (
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <input type="time" value={h.from} onChange={e => { const next = {...(settings.onlineHours||{}), [day]: {...h, from: e.target.value}}; setOnline("onlineHours", next); }}
+                        style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 6, color: "#fff", padding: "6px 10px", fontSize: 13, outline: "none" }} />
+                      <span style={{ color: "#888" }}>to</span>
+                      <input type="time" value={h.to} onChange={e => { const next = {...(settings.onlineHours||{}), [day]: {...h, to: e.target.value}}; setOnline("onlineHours", next); }}
+                        style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 6, color: "#fff", padding: "6px 10px", fontSize: 13, outline: "none" }} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 24, marginBottom: 16 }}>
+            <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 16 }}>Throttling</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <span style={{ color: "#ccc", fontSize: 13 }}>Max Pizzas Per Slot</span>
+              <NumpadInput value={settings.onlineMaxPizzasPerSlot||4} label="MAX PIZZAS PER SLOT" decimals={false}
+                onChange={v => setOnline("onlineMaxPizzasPerSlot", v)} style={{ width: 80 }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <span style={{ color: "#ccc", fontSize: 13 }}>Prep Time (mins)</span>
+              <NumpadInput value={settings.onlinePrepTime||30} label="PREP TIME (MINS)" decimals={false}
+                onChange={v => setOnline("onlinePrepTime", v)} style={{ width: 80 }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <span style={{ color: "#ccc", fontSize: 13 }}>Cutoff Before Close (mins)</span>
+              <NumpadInput value={settings.onlineCutoffMins||30} label="CUTOFF MINS" decimals={false}
+                onChange={v => setOnline("onlineCutoffMins", v)} style={{ width: 80 }} />
+            </div>
+          </div>
+          <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 24, marginBottom: 16 }}>
+            <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 16 }}>Blackouts</div>
+            <div style={{ color: "#888", fontSize: 12, marginBottom: 16 }}>Block specific time slots on a specific date.</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ color: "#888", fontSize: 13 }}>Date</span>
+                <input type="date" min={new Date().toISOString().split("T")[0]} value={newBlackoutDate || ""} onChange={e => setNewBlackoutDate(e.target.value)}
+                  style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 6, color: "#fff", padding: "8px 12px", fontSize: 14, outline: "none" }} />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ color: "#888", fontSize: 13 }}>From</span>
+                <input type="time" value={newBlackout} onChange={e => setNewBlackout(e.target.value)}
+                  style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 6, color: "#fff", padding: "8px 12px", fontSize: 14, outline: "none" }} />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ color: "#888", fontSize: 13 }}>To</span>
+                <input type="time" value={newBlackoutEnd || ""} onChange={e => setNewBlackoutEnd(e.target.value)}
+                  style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 6, color: "#fff", padding: "8px 12px", fontSize: 14, outline: "none" }} />
+              </div>
+              <button onClick={() => {
+                if (!newBlackout || !newBlackoutDate) return;
+                const toMins = t => { const [h,m] = t.split(":").map(Number); return h*60+m; };
+                const fmtSlot = (date, mins) => { const h = Math.floor(mins/60); const m = mins%60; return date + "T" + h + ":" + String(m).padStart(2,"0"); };
+                const startMins = toMins(newBlackout);
+                const endMins = newBlackoutEnd ? toMins(newBlackoutEnd) : startMins;
+                const slots = [];
+                for (let t = startMins; t <= endMins; t += 15) slots.push(fmtSlot(newBlackoutDate, t));
+                const existing = settings.onlineBlackouts || [];
+                const merged = [...new Set([...existing, ...slots])];
+                setOnline("onlineBlackouts", merged);
+                setNewBlackout(""); setNewBlackoutEnd(""); setNewBlackoutDate("");
+              }} style={{ padding: "8px 16px", background: "#e85d04", border: "none", borderRadius: 6, color: "#fff", fontWeight: 700, cursor: "pointer" }}>Block Range</button>
+              <button onClick={() => setOnline("onlineBlackouts", [])} style={{ padding: "8px 16px", background: "none", border: "1px solid #c0392b44", borderRadius: 6, color: "#c0392b", fontWeight: 700, cursor: "pointer" }}>Clear All</button>
+            </div>
+            {(settings.onlineBlackouts || []).length === 0 && <div style={{ color: "#777", fontSize: 13 }}>No slots blocked.</div>}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {(settings.onlineBlackouts || []).sort().map(slot => (
+                <div key={slot} style={{ background: "#c0392b22", border: "1px solid #c0392b44", borderRadius: 6, padding: "6px 12px", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ color: "#c0392b", fontWeight: 700, fontSize: 13 }}>{slot.includes("T") ? (() => { const [d,t] = slot.split("T"); const [h,m] = t.split(":").map(Number); return new Date(d).toLocaleDateString([],{month:"short",day:"numeric"}) + " " + new Date(0,0,0,h,m).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}); })() : slot}</span>
+                  <button onClick={() => setOnline("onlineBlackouts", (settings.onlineBlackouts||[]).filter(s => s !== slot))} style={{ background: "none", border: "none", color: "#c0392b", cursor: "pointer", fontSize: 14, padding: 0 }}>x</button>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 24, marginBottom: 16 }}>
+            <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 16 }}>Full Day Closures</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <input type="date" min={new Date().toISOString().split("T")[0]} id="closure-date-input"
+                style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 6, color: "#fff", padding: "8px 12px", fontSize: 14, outline: "none" }} />
+              <button onClick={() => {
+                const input = document.getElementById("closure-date-input");
+                const d = input.value;
+                if (!d) return;
+                const existing = settings.onlineClosedDates || [];
+                if (!existing.includes(d)) setOnline("onlineClosedDates", [...existing, d]);
+                input.value = "";
+              }} style={{ padding: "8px 16px", background: "#e85d04", border: "none", borderRadius: 6, color: "#fff", fontWeight: 700, cursor: "pointer" }}>Add Closure</button>
+            </div>
+            {(settings.onlineClosedDates || []).length === 0 && <div style={{ color: "#777", fontSize: 13 }}>No closures scheduled.</div>}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {(settings.onlineClosedDates || []).sort().map(d => (
+                <div key={d} style={{ background: "#c0392b22", border: "1px solid #c0392b44", borderRadius: 6, padding: "6px 12px", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ color: "#c0392b", fontWeight: 700, fontSize: 13 }}>{new Date(d+"T12:00:00").toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"})}</span>
+                  <button onClick={() => setOnline("onlineClosedDates", (settings.onlineClosedDates||[]).filter(x => x !== d))} style={{ background: "none", border: "none", color: "#c0392b", cursor: "pointer", fontSize: 14, padding: 0 }}>x</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>)}
+
+        {/* ── MENU ── */}
+        {settingsSection === "menu" && (
+          <div style={{ color: "#888", fontSize: 14, padding: 20 }}>Menu management is available via the Menu button in the main POS view.</div>
+        )}
+
+        {/* ── DELIVERY ── */}
+        {settingsSection === "delivery" && (<>
           <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 24, marginBottom: 16 }}>
             <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 18 }}>Delivery Settings</div>
             <div style={{ marginBottom: 16 }}>
@@ -3724,252 +3928,26 @@ function SettingsView({ settings, setSettings }) {
                 <div style={{ color: "#ccc", fontSize: 13 }}>Mileage Reimbursement</div>
                 <div style={{ color: "#666", fontSize: 11, marginTop: 2 }}>Track driver reimbursement at {fmt(settings.deliveryReimbRate || 0.67)}/mi</div>
               </div>
-              <button onClick={() => setOnline("deliveryReimbEnabled", !(settings.deliveryReimbEnabled))} style={{ width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", background: settings.deliveryReimbEnabled ? "#06d6a0" : "#2a2a2a", position: "relative", flexShrink: 0 }}>
+              <button onClick={() => setOnline("deliveryReimbEnabled", !settings.deliveryReimbEnabled)} style={{ width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", background: settings.deliveryReimbEnabled ? "#06d6a0" : "#2a2a2a", position: "relative", flexShrink: 0 }}>
                 <div style={{ position: "absolute", top: 3, left: settings.deliveryReimbEnabled ? 23 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
               </button>
             </div>
           </div>
-          <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 24, marginBottom: 16 }}>
-            <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 18 }}>Navigation Visibility</div>
-            <div style={{ color: "#777", fontSize: 12, marginBottom: 14 }}>Hide buttons from the top nav bar.</div>
-            {[["cfd","Customer Display"],["kds","KDS"],["online","Online Orders"],["delivery","Dispatch"],["timeclock","Timeclock"],["customers","Customers"],["orders","Orders"]].map(([id, label]) => {
-              const hidden = (settings.hiddenNavItems || []).includes(id);
-              return (
-                <div key={id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                  <span style={{ color: hidden ? "#555" : "#ccc", fontSize: 13 }}>{label}</span>
-                  <div onClick={() => {
-                    const current = settings.hiddenNavItems || [];
-                    const next = hidden ? current.filter(x => x !== id) : [...current, id];
-                    setSettings(s => { const updated = {...s, hiddenNavItems: next}; DB.saveSettings(updated).catch(console.error); return updated; });
-                  }} style={{ width: 44, height: 24, borderRadius: 12, background: hidden ? "#2a2a2a" : "#e85d04", cursor: "pointer", position: "relative", transition: "background 0.2s" }}>
-                    <div style={{ position: "absolute", top: 3, left: hidden ? 3 : 23, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        </>)}
 
-          <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 20, marginBottom: 16 }}>
-            <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 12 }}>Preview ($25 order)</div>
-            <div style={{ display: "flex", justifyContent: "space-between", color: "#999", fontSize: 13, marginBottom: 4 }}><span>Tax ({form.taxRate}%)</span><span>{fmt(25*(parseFloat(form.taxRate)||0)/100)}</span></div>
-            <div style={{ display: "flex", justifyContent: "space-between", color: "#06d6a0", fontSize: 14, marginBottom: 4, paddingTop: 6, borderTop: "1px solid #1a1a1a" }}><span>Cash total</span><span style={{ fontWeight: 700 }}>{fmt(25*(1+(parseFloat(form.taxRate)||0)/100))}</span></div>
-            <div style={{ display: "flex", justifyContent: "space-between", color: "#3a86ff", fontSize: 13 }}><span>Card total (+{form.cardSurcharge}%)</span><span style={{ fontWeight: 700 }}>{fmt(25*(1+(parseFloat(form.taxRate)||0)/100)*(1+(parseFloat(form.cardSurcharge)||0)/100))}</span></div>
-          </div>
+        {/* ── DISCOUNTS ── */}
+        {settingsSection === "discounts" && (<DiscountsManager />)}
 
-          <button onClick={save} style={{ width: "100%", padding: "13px 0", background: saved ? "#06d6a0" : "#e85d04", border: "none", borderRadius: 8, color: saved ? "#000" : "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", letterSpacing: 1 }}>
-            {saved ? "Saved!" : "Save Settings"}
-          </button>
-        </div>
+        {/* ── EMPLOYEES ── */}
+        {settingsSection === "employees" && (
+          <div style={{ color: "#888", fontSize: 14, padding: 20 }}>Employee management coming soon.</div>
+        )}
 
-        {/* Right: Online Ordering */}
-        <div style={{ flex: 1 }}>
-          <div style={{ color: "#e85d04", fontSize: 11, letterSpacing: 3, textTransform: "uppercase", marginBottom: 16 }}>Online Ordering</div>
-
-          {/* Sub-tabs */}
-          <div style={{ display: "flex", gap: 2, marginBottom: 16, background: "#1a1a1a", borderRadius: 8, padding: 4 }}>
-            {onlineTabs.map(([id, label]) => (
-              <button key={id} onClick={() => setOnlineTab(id)} style={{ flex: 1, padding: "7px 0", borderRadius: 6, border: "none", background: onlineTab === id ? "#e85d04" : "none", color: onlineTab === id ? "#fff" : "#555", fontSize: 11, fontWeight: 700, cursor: "pointer", letterSpacing: 0.5 }}>
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* General tab */}
-          {onlineTab === "general" && (
-            <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 12, padding: 20 }}>
-              {[
-                ["onlineOrdering", "Enable Online Ordering", settings.onlineOrdering],
-                ["onlinePickup",   "Allow Pickup Orders",    settings.onlinePickup],
-                ["onlineDelivery", "Allow Delivery Orders",  settings.onlineDelivery],
-              ].map(([key, label, val]) => (
-                <label key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #1a1a1a", cursor: "pointer" }}>
-                  <span style={{ color: "#ccc", fontSize: 14 }}>{label}</span>
-                  <input type="checkbox" checked={!!val} onChange={() => setOnline(key, !val)} style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#e85d04" }} />
-                </label>
-              ))}
-              {/* POS Order Types */}
-              <div style={{ color: "#e85d04", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: "uppercase", margin: "16px 0 8px" }}>POS Order Types</div>
-              {[
-                ["posEnableDineIn",   "Enable Dine In",   settings.posEnableDineIn  !== false],
-                ["posEnableTakeOut",  "Enable Take Out",  settings.posEnableTakeOut !== false],
-                ["posEnableDelivery", "Enable Delivery",  settings.posEnableDelivery !== false],
-              ].map(([key, label, val]) => (
-                <div key={key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 14, marginBottom: 14, borderBottom: "1px solid #1a1a1a" }}>
-                  <span style={{ color: "#ccc", fontSize: 14 }}>{label}</span>
-                  <button onClick={() => setOnline(key, !val)} style={{ width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", background: val ? "#06d6a0" : "#2a2a2a", position: "relative", flexShrink: 0 }}>
-                    <div style={{ position: "absolute", top: 3, left: val ? 23 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
-                  </button>
-                </div>
-              ))}
-              {/* ASAP toggle stays in online section */}
-              {[["onlineAsap", "Allow ASAP Orders", settings.onlineAsap !== false]].map(([key, label, val]) => (
-                <div key={key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 14, marginBottom: 14, borderBottom: "1px solid #1a1a1a" }}>
-                  <span style={{ color: "#ccc", fontSize: 14 }}>{label}</span>
-                  {toggleSwitch(key, val)}
-                </div>
-              ))}
-              <div style={{ display: "flex", gap: 16 }}>
-                <div>
-                  <div style={{ color: "#999", fontSize: 11, marginBottom: 6 }}>Prep Time (min)</div>
-                  {numInput(settings.onlinePrepTime || 30, v => setOnline("onlinePrepTime", v))}
-                </div>
-                <div>
-                  <div style={{ color: "#999", fontSize: 11, marginBottom: 6 }}>Cutoff Before Close (min)</div>
-                  {numInput(settings.onlineCutoffMins || 30, v => setOnline("onlineCutoffMins", v))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Hours tab */}
-          {onlineTab === "hours" && (
-            <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 12, padding: 20 }}>
-              {DAYS.map(day => {
-                const h = (settings.onlineHours || {})[day] || { open: true, from: "11:00", to: "21:00" };
-                const upd = (field, val) => setSettings(s => ({
-                  ...s,
-                  onlineHours: { ...(s.onlineHours || {}), [day]: { ...h, [field]: val } }
-                }));
-                return (
-                  <div key={day} style={{ display: "flex", alignItems: "center", gap: 12, paddingBottom: 12, marginBottom: 12, borderBottom: "1px solid #1a1a1a" }}>
-                    <span style={{ color: h.open ? "#ccc" : "#444", fontSize: 13, width: 90, flexShrink: 0 }}>{day}</span>
-                    <button onClick={() => upd("open", !h.open)} style={{ width: 36, height: 20, borderRadius: 10, border: "none", cursor: "pointer", background: h.open ? "#06d6a0" : "#2a2a2a", position: "relative", flexShrink: 0 }}>
-                      <div style={{ position: "absolute", top: 2, left: h.open ? 17 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
-                    </button>
-                    {h.open ? (
-                      <>
-                        <input type="time" value={h.from} onChange={e => upd("from", e.target.value)} style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 6, color: "#fff", padding: "5px 8px", fontSize: 13, outline: "none" }} />
-                        <span style={{ color: "#999" }}>to</span>
-                        <input type="time" value={h.to} onChange={e => upd("to", e.target.value)} style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 6, color: "#fff", padding: "5px 8px", fontSize: 13, outline: "none" }} />
-                      </>
-                    ) : (
-                      <span style={{ color: "#777", fontSize: 12 }}>Closed</span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Throttle tab */}
-          {onlineTab === "throttle" && (
-            <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 12, padding: 20 }}>
-              <div style={{ color: "#888", fontSize: 12, marginBottom: 16 }}>Control how many pizzas can be accepted per 15-minute time slot. Orders that exceed the limit are bumped to the next available slot.</div>
-              <div style={{ display: "flex", gap: 20, alignItems: "flex-end", flexWrap: "wrap" }}>
-                <div>
-                  <div style={{ color: "#ccc", fontWeight: 700, fontSize: 14, marginBottom: 6 }}>Max Pizzas per 15-min Slot</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <button onClick={() => setOnline("onlineMaxPizzasPerSlot", Math.max(1, (settings.onlineMaxPizzasPerSlot || 4) - 1))} style={{ width: 34, height: 34, borderRadius: 6, background: "#1a1a1a", border: "1px solid #2a2a2a", color: "#fff", fontSize: 18, cursor: "pointer" }}>-</button>
-                    <span style={{ color: "#fff", fontSize: 28, fontWeight: 700, minWidth: 40, textAlign: "center" }}>{settings.onlineMaxPizzasPerSlot || 4}</span>
-                    <button onClick={() => setOnline("onlineMaxPizzasPerSlot", (settings.onlineMaxPizzasPerSlot || 4) + 1)} style={{ width: 34, height: 34, borderRadius: 6, background: "#1a1a1a", border: "1px solid #2a2a2a", color: "#fff", fontSize: 18, cursor: "pointer" }}>+</button>
-                    <span style={{ color: "#999", fontSize: 13 }}>pizzas / slot</span>
-                  </div>
-                </div>
-              </div>
-              <div style={{ marginTop: 20, background: "#1a1a1a", borderRadius: 8, padding: 14 }}>
-                <div style={{ color: "#999", fontSize: 12, marginBottom: 8 }}>HOW IT WORKS</div>
-                <div style={{ color: "#888", fontSize: 13, lineHeight: 1.6 }}>
-                  <strong style={{ color: "#e85d04" }}>11:00</strong> — capacity {settings.onlineMaxPizzasPerSlot || 4}, order placed for 5 pizzas.<br />
-                  5 &gt; {settings.onlineMaxPizzasPerSlot || 4} → bumped to <strong style={{ color: "#e85d04" }}>11:15</strong><br />
-                  <br />
-                  If 11:00 has 3 pizzas ordered (3 remaining), the next order of 5 at 11:15 gets:<br />
-                  <strong style={{ color: "#06d6a0" }}>{settings.onlineMaxPizzasPerSlot || 4} (base) + 3 (carry) = {(settings.onlineMaxPizzasPerSlot || 4) + 3} effective capacity</strong><br />
-                  The 3 remaining from 11:00 can be prepped during that window for the 11:15 order.
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Blackouts tab */}
-          {onlineTab === "blackout" && (
-            <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 12, padding: 20 }}>
-              {/* Full Day Closures */}
-              <div style={{ color: "#e85d04", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Full Day Closures</div>
-              <div style={{ color: "#888", fontSize: 12, marginBottom: 12 }}>Block an entire day — customers won't be able to schedule orders for that date.</div>
-              <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
-                <input type="date" min={new Date().toISOString().split("T")[0]}
-                  onChange={e => {
-                    const d = e.target.value;
-                    if (!d) return;
-                    const existing = settings.onlineClosedDates || [];
-                    if (!existing.includes(d)) setOnline("onlineClosedDates", [...existing, d].sort());
-                    e.target.value = "";
-                  }}
-                  style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 6, color: "#fff", padding: "8px 12px", fontSize: 14, outline: "none" }} />
-                <button onClick={() => setOnline("onlineClosedDates", [])} style={{ padding: "8px 14px", background: "none", border: "1px solid #c0392b44", borderRadius: 6, color: "#c0392b", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Clear All</button>
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 24 }}>
-                {(settings.onlineClosedDates || []).length === 0 && <div style={{ color: "#555", fontSize: 13 }}>No closures scheduled.</div>}
-                {(settings.onlineClosedDates || []).map(d => (
-                  <div key={d} style={{ background: "#c0392b22", border: "1px solid #c0392b44", borderRadius: 6, padding: "6px 12px", display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ color: "#c0392b", fontWeight: 700, fontSize: 13 }}>{new Date(d + "T12:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}</span>
-                    <button onClick={() => setOnline("onlineClosedDates", (settings.onlineClosedDates || []).filter(x => x !== d))} style={{ background: "none", border: "none", color: "#c0392b", cursor: "pointer", fontSize: 14, padding: 0 }}>×</button>
-                  </div>
-                ))}
-              </div>
-              <div style={{ borderTop: "1px solid #222", paddingTop: 20, marginBottom: 16 }}>
-                <div style={{ color: "#e85d04", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Time Slot Blocks</div>
-              </div>
-              <div style={{ color: "#888", fontSize: 12, marginBottom: 16 }}>Block specific time slots on a specific date. Blackouts are date-specific and won't carry over to other days.</div>
-              <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ color: "#888", fontSize: 13 }}>Date</span>
-                  <input type="date" min={new Date().toISOString().split("T")[0]} value={newBlackoutDate || ""} onChange={e => setNewBlackoutDate(e.target.value)} style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 6, color: "#fff", padding: "8px 12px", fontSize: 14, outline: "none" }} />
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ color: "#888", fontSize: 13 }}>From</span>
-                  <input type="time" value={newBlackout} onChange={e => setNewBlackout(e.target.value)} style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 6, color: "#fff", padding: "8px 12px", fontSize: 14, outline: "none" }} />
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ color: "#888", fontSize: 13 }}>To</span>
-                  <input type="time" value={newBlackoutEnd || ""} onChange={e => setNewBlackoutEnd(e.target.value)} style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 6, color: "#fff", padding: "8px 12px", fontSize: 14, outline: "none" }} />
-                </div>
-                <button
-                  onClick={() => {
-                    if (!newBlackout || !newBlackoutDate) return;
-                    const toMins = t => { const [h,m] = t.split(":").map(Number); return h*60+m; };
-                    const fmtSlot = (date, mins) => { const h = Math.floor(mins/60); const m = mins%60; return date + "T" + h + ":" + String(m).padStart(2,"0"); };
-                    const startMins = toMins(newBlackout);
-                    const endMins = newBlackoutEnd ? toMins(newBlackoutEnd) : startMins;
-                    const slots = [];
-                    for (let t = startMins; t <= endMins; t += 15) slots.push(fmtSlot(newBlackoutDate, t));
-                    const existing = settings.onlineBlackouts || [];
-                    const merged = [...new Set([...existing, ...slots])];
-                    setOnline("onlineBlackouts", merged);
-                    setNewBlackout(""); setNewBlackoutEnd(""); setNewBlackoutDate("");
-                  }}
-                  style={{ padding: "8px 16px", background: "#e85d04", border: "none", borderRadius: 6, color: "#fff", fontWeight: 700, cursor: "pointer" }}
-                >
-                  Block Range
-                </button>
-                <button onClick={() => setOnline("onlineBlackouts", [])}
-                  style={{ padding: "8px 16px", background: "none", border: "1px solid #c0392b44", borderRadius: 6, color: "#c0392b", fontWeight: 700, cursor: "pointer" }}>
-                  Clear All
-                </button>
-              </div>
-              {(settings.onlineBlackouts || []).length === 0 && (
-                <div style={{ color: "#777", fontSize: 13 }}>No slots blocked.</div>
-              )}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {(settings.onlineBlackouts || []).sort().map(slot => (
-                  <div key={slot} style={{ background: "#c0392b22", border: "1px solid #c0392b44", borderRadius: 6, padding: "6px 12px", display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ color: "#c0392b", fontWeight: 700, fontSize: 13 }}>{slot.includes("T") ? (() => { const [d,t] = slot.split("T"); const [h,m] = t.split(":").map(Number); return new Date(d).toLocaleDateString([],{month:"short",day:"numeric"}) + " " + new Date(0,0,0,h,m).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}); })() : slot}</span>
-                    <button onClick={() => setOnline("onlineBlackouts", (settings.onlineBlackouts || []).filter(s => s !== slot))} style={{ background: "none", border: "none", color: "#c0392b", cursor: "pointer", fontSize: 14, padding: 0 }}>x</button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// DELIVERY MANAGEMENT
-// ---------------------------------------------------------------------------
-
 // ---- Dispatch Board (manager view) ----
 function DispatchBoard({ orders, employees, shifts, onAssign, onUpdateDeliveryStatus, settings }) {
   const clockedInIds = new Set((shifts || []).filter(s => !s.clockOut).map(s => s.employeeId));
