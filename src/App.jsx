@@ -855,6 +855,53 @@ function CustomerPanel({ selected, onSelect, onClear, customers, onAddCustomer, 
 // Ticket
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
+// NumpadInput — reusable tap-to-edit numeric input with numpad popup
+// ---------------------------------------------------------------------------
+function NumpadInput({ value, onChange, label, prefix, suffix, style, placeholder, decimals = true }) {
+  const [open, setOpen] = useState(false);
+  const [local, setLocal] = useState(String(value || ""));
+  useEffect(() => { setLocal(String(value || "")); }, [value]);
+  const commit = () => { setOpen(false); onChange(parseFloat(local) || 0); };
+  return (
+    <>
+      <div onClick={() => { setLocal(String(value || "")); setOpen(true); }}
+        style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, padding: "10px 14px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, minWidth: 80, ...style }}>
+        {prefix && <span style={{ color: "#888", fontSize: 14 }}>{prefix}</span>}
+        <span style={{ color: local ? "#fff" : "#555", fontSize: 16, fontWeight: 700, fontFamily: "monospace" }}>{local || placeholder || "0"}</span>
+        {suffix && <span style={{ color: "#888", fontSize: 14 }}>{suffix}</span>}
+      </div>
+      {open && (
+        <div style={{ position: "fixed", inset: 0, background: "#000000dd", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 300 }} onClick={commit}>
+          <div style={{ background: "#141414", border: "1px solid #2a2a2a", borderRadius: "16px 16px 0 0", width: "100%", maxWidth: 380, padding: 16 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <span style={{ color: "#999", fontSize: 12, letterSpacing: 2 }}>{label || "ENTER VALUE"}</span>
+              <button onClick={commit} style={{ background: "none", border: "none", color: "#666", fontSize: 20, cursor: "pointer" }}>✕</button>
+            </div>
+            <div style={{ background: "#1a1a1a", borderRadius: 10, padding: "12px 16px", marginBottom: 14, textAlign: "right" }}>
+              <span style={{ color: "#fff", fontSize: 32, fontWeight: 700, fontFamily: "monospace" }}>{prefix}{local || "0"}{suffix}</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+              {["7","8","9","4","5","6","1","2","3", decimals ? "." : "00", "0", "back"].map(k => (
+                <button key={k} onClick={() => {
+                  if (k === "back") { setLocal(l => l.slice(0,-1)); return; }
+                  if (k === "." && !decimals) { setLocal(l => l + "00"); return; }
+                  if (k === "." && local.includes(".")) return;
+                  if (k === "." && local === "") { setLocal("0."); return; }
+                  if (local.length >= 8) return;
+                  setLocal(l => l + k);
+                }} style={{ padding: "18px 0", borderRadius: 10, border: "1px solid #2a2a2a", background: k === "back" ? "#c0392b22" : "#1a1a1a", color: k === "back" ? "#c0392b" : "#fff", fontSize: k === "back" ? 18 : 22, fontWeight: 700, cursor: "pointer", minHeight: 60, touchAction: "manipulation" }}>
+                  {k === "back" ? "⌫" : k}
+                </button>
+              ))}
+            </div>
+            <button onClick={commit} style={{ width: "100%", marginTop: 10, padding: "16px 0", background: "#e85d04", border: "none", borderRadius: 10, color: "#fff", fontWeight: 700, fontSize: 16, cursor: "pointer" }}>Done</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // Numpad Component
 // ---------------------------------------------------------------------------
 function Numpad({ value, onChange, onClose, label }) {
@@ -3623,8 +3670,16 @@ function SettingsView({ settings, setSettings }) {
 
           <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 24, marginBottom: 16 }}>
             <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 18 }}>Tax & Fees</div>
-            {field("Sales Tax Rate", "taxRate", "PA state 6% + Allegheny Co. 1% = 7%")}
-            {field("Credit Card Surcharge", "cardSurcharge", "Applied when customer pays by card.")}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Sales Tax Rate (%)</div>
+              <NumpadInput value={(settings.taxRate||0.06)*100} label="SALES TAX RATE (%)" suffix="%" decimals={true}
+                onChange={v => { const next = {...settings, taxRate: v/100}; setSettings(next); DB.saveSettings(next).catch(console.error); setForm(f=>({...f,taxRate:v})); }} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Credit Card Surcharge (%)</div>
+              <NumpadInput value={(settings.cardSurcharge||0.04)*100} label="CARD SURCHARGE (%)" suffix="%" decimals={true}
+                onChange={v => { const next = {...settings, cardSurcharge: v/100}; setSettings(next); DB.saveSettings(next).catch(console.error); setForm(f=>({...f,cardSurcharge:v})); }} />
+            </div>
           </div>
           <div style={{ background: "#141414", border: "1px solid #1a1a1a", borderRadius: 14, padding: 24, marginBottom: 16 }}>
             <div style={{ color: "#888", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 18 }}>Delivery Settings</div>
@@ -3636,11 +3691,9 @@ function SettingsView({ settings, setSettings }) {
             </div>
             <div style={{ marginBottom: 16 }}>
               <div style={{ color: "#ccc", fontSize: 13, marginBottom: 6 }}>Delivery Radius (miles)</div>
-              <input type="number" min="0.5" max="20" step="0.5"
-                defaultValue={settings.deliveryRadiusMiles || 2}
-                key={settings.deliveryRadiusMiles}
-                onBlur={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) setSettings(s => { const next = {...s, deliveryRadiusMiles: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
-                style={{ width: 120, background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, color: "#fff", padding: "10px 14px", fontSize: 18, fontWeight: 700, outline: "none", textAlign: "center" }} />
+              <NumpadInput value={settings.deliveryRadiusMiles || 2} label="DELIVERY RADIUS (MILES)" suffix=" mi" decimals={true}
+                onChange={v => { if (v > 0) setSettings(s => { const next = {...s, deliveryRadiusMiles: v}; DB.saveSettings(next).catch(console.error); return next; }); }}
+                style={{ width: 120 }} />
             </div>
             <DeliveryRadiusMap settings={settings} apiKey="AIzaSyBIkUWwXSNTOc22dLXwVqynZa8hWyuJITQ" />
             <div style={{ marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>

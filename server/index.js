@@ -319,7 +319,7 @@ app.post("/api/orders", async (req, res) => {
        customerId, JSON.stringify(order.customer||null),
        subtotal, order.total-subtotal, order.total,
        order.slotKey||null, order.slotLabel||null,
-       JSON.stringify(order.splitSlots||null), order.pizzaCount||0,
+       JSON.stringify(order.splitSlots||null), (() => { console.log("pizza_count debug:", order.pizzaCount, order.pizza_count, order.items?.length); return order.pizzaCount||order.pizza_count||0; })(),
        order.placedAt ? new Date(order.placedAt).toISOString() : new Date().toISOString(),
        order.scheduledTime||null]
     );

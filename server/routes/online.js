@@ -76,6 +76,17 @@ router.post("/place-order", async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// Get store's current date in its timezone
+router.get("/today", async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT timezone FROM settings WHERE id=1");
+    const tz = (rows[0] && rows[0].timezone) || "America/New_York";
+    const nowLocal = new Date(new Date().toLocaleString("en-US", { timeZone: tz }));
+    const todayStr = nowLocal.getFullYear() + "-" + String(nowLocal.getMonth()+1).padStart(2,"0") + "-" + String(nowLocal.getDate()).padStart(2,"0");
+    res.json({ todayStr });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // Get available slots for a given date
 router.get("/slots", async (req, res) => {
   try {
@@ -100,14 +111,14 @@ router.get("/slots", async (req, res) => {
     const storeTimezone = settings.timezone || "America/New_York";
     const nowLocal = new Date(new Date().toLocaleString("en-US", { timeZone: storeTimezone }));
     const todayStr = nowLocal.getFullYear() + "-" + String(nowLocal.getMonth()+1).padStart(2,"0") + "-" + String(nowLocal.getDate()).padStart(2,"0");
-    const targetDate = date ? new Date(date + "T00:00:00") : nowLocal;
+    const targetDate = new Date((date || todayStr) + "T00:00:00");
     const isToday = !date || date === todayStr;
     const dayName = dayNames[targetDate.getDay()];
 
     // Check if date is closed
     const closedDates = settings.onlineClosedDates || [];
     if (date && closedDates.includes(date)) {
-      return res.json({ closed: true, slots: [], reason: "closed_date" });
+      return res.json({ closed: true, slots: [], reason: "closed_date", todayStr });
     }
 
     // Get hours for this day
@@ -115,7 +126,7 @@ router.get("/slots", async (req, res) => {
       ? settings.onlineHours
       : dayNames.reduce((acc, d) => ({ ...acc, [d]: { open: true, from: "11:00", to: "21:00" } }), {});
     const hours = onlineHours[dayName];
-    if (!hours || !hours.open) return res.json({ closed: true, slots: [], reason: "closed_day" });
+    if (!hours || !hours.open) return res.json({ closed: true, slots: [], reason: "closed_day", todayStr });
 
     const [fromH, fromM] = hours.from.split(":").map(Number);
     const [toH, toM] = hours.to.split(":").map(Number);
@@ -184,7 +195,10 @@ router.get("/slots", async (req, res) => {
       return { ...raw, isFull: remaining > 0 };
     }).filter(s => !s.isPast && !s.isBlackedOut);
 
-    console.log("SLOTS DEBUG rawSlots:", rawSlots.length, "mapped:", slots.length, "first raw:", rawSlots[0] && rawSlots[0].key, "first slot:", slots[0] && slots[0].key);
+    const pastCount = rawSlots.filter(s=>s.isPast).length;
+    const blackoutCount = rawSlots.filter(s=>s.isBlackedOut).length;
+    const fullCount = slots.filter(s=>s.isFull).length;
+    console.log("SLOTS DEBUG rawSlots:", rawSlots.length, "past:", pastCount, "blackout:", blackoutCount, "full:", fullCount, "returned:", slots.length);
     res.json({ closed: false, slots });
   } catch(e) {
     console.error("Slots error:", e);
