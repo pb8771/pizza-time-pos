@@ -76,6 +76,80 @@ router.post("/place-order", async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// Validate slot capacity before charging
+router.post("/validate-slot", async (req, res) => {
+  try {
+    const { datetime, pizzaCount } = req.body;
+    if (!datetime) return res.json({ available: true });
+    const date = datetime.split("T")[0];
+    const slotKey = datetime.split("T")[1];
+    const count = parseInt(pizzaCount) || 1;
+
+    const { rows: settingsRows } = await pool.query("SELECT * FROM settings WHERE id=1");
+    const s = settingsRows[0];
+    const maxPizzas = s.online_max_pizzas || 4;
+
+    // Get existing pizza usage for this date
+    const { rows: orders } = await pool.query(
+      `SELECT scheduled_time, pizza_count FROM orders WHERE status NOT IN ('Cancelled') AND scheduled_time::text LIKE $1`,
+      [date + "%"]
+    );
+
+    // Build slot usage map for this date
+    const usage = {};
+    orders.forEach(o => {
+      const key = o.scheduled_time;
+      if (key) usage[key] = (usage[key] || 0) + (o.pizza_count || 0);
+    });
+
+    // Check if we can fit pizzaCount starting from the selected slot
+    // Build 15-min slots from store hours
+    const { rows: hourRows } = await pool.query("SELECT online_hours, online_prep_time, online_cutoff_mins, timezone FROM settings WHERE id=1");
+    const tz = hourRows[0].timezone || "America/New_York";
+    const nowLocal = new Date(new Date().toLocaleString("en-US", { timeZone: tz }));
+    const dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    const targetDate = new Date(date + "T00:00:00");
+    const dayName = dayNames[targetDate.getDay()];
+    const onlineHours = hourRows[0].online_hours || {};
+    const hours = onlineHours[dayName];
+    if (!hours || !hours.open) return res.json({ available: false, reason: "Store closed that day" });
+
+    const [fromH, fromM] = hours.from.split(":").map(Number);
+    const [toH, toM] = hours.to.split(":").map(Number);
+    const cutoff = hourRows[0].online_cutoff_mins || 30;
+
+    // Build all slots for that day
+    const allSlots = [];
+    let cur = new Date(targetDate);
+    cur.setHours(fromH, fromM, 0, 0);
+    const close = new Date(targetDate);
+    close.setHours(toH, toM, 0, 0);
+    const cutoffTime = new Date(close.getTime() - cutoff * 60000);
+    while (cur <= cutoffTime) {
+      const h = cur.getHours();
+      const m = String(cur.getMinutes()).padStart(2, "0");
+      const key = date + "T" + h + ":" + m;
+      const used = usage[key] || 0;
+      allSlots.push({ key, remaining: Math.max(0, maxPizzas - used) });
+      cur = new Date(cur.getTime() + 15 * 60000);
+    }
+
+    // Find selected slot and check if pizzaCount can be filled from there
+    const startIdx = allSlots.findIndex(s => s.key === datetime);
+    if (startIdx === -1) return res.json({ available: false, reason: "Slot not found" });
+
+    let remaining = count;
+    for (let i = startIdx; i < allSlots.length && remaining > 0; i++) {
+      remaining -= Math.min(allSlots[i].remaining, remaining);
+    }
+
+    res.json({ available: remaining === 0 });
+  } catch(e) {
+    console.error("validate-slot error:", e);
+    res.json({ available: true }); // fail open
+  }
+});
+
 // Get store's current date in its timezone
 router.get("/today", async (req, res) => {
   try {
@@ -183,16 +257,12 @@ router.get("/slots", async (req, res) => {
       cur = new Date(cur.getTime() + 15 * 60000);
     }
 
-    // Build available slots with capacity simulation
+    // Build available slots - a slot is full if it has no remaining capacity
     const slots = rawSlots.map((raw, idx) => {
       if (raw.isPast || raw.isBlackedOut) return { ...raw, isFull: true };
-      let remaining = pizzaCount;
-      for (let i = idx; i < rawSlots.length && remaining > 0; i++) {
-        if (rawSlots[i].isBlackedOut) break;
-        const cap = rawSlots[i].remaining;
-        remaining -= Math.min(cap, remaining);
-      }
-      return { ...raw, isFull: remaining > 0 };
+      // Slot is full if its own remaining capacity is 0
+      const isFull = raw.remaining === 0;
+      return { ...raw, isFull };
     }).filter(s => !s.isPast && !s.isBlackedOut);
 
     const pastCount = rawSlots.filter(s=>s.isPast).length;
